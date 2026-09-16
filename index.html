@@ -1,0 +1,791 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>墨蛇</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Ma+Shan+Zheng&family=Noto+Serif+SC:wght@400;600;700&display=swap" rel="stylesheet">
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    :root {
+      --paper: #ebe6da;
+      --paper-deep: #ddd6c6;
+      --ink: #1c1a17;
+      --ink-soft: #4a453c;
+      --wash: #8a8376;
+      --seal: #a63d2f;
+      --line: #cfc6b4;
+    }
+
+    body {
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      font-family: "Noto Serif SC", serif;
+      color: var(--ink);
+      background:
+        radial-gradient(ellipse at 30% 20%, #f4f0e6 0%, transparent 45%),
+        radial-gradient(ellipse at 80% 80%, #d9d2c2 0%, transparent 40%),
+        linear-gradient(160deg, #e7e1d3 0%, #d8d0bf 100%);
+    }
+
+    .shell {
+      width: 520px;
+      display: grid;
+      gap: 18px;
+      padding: 8px;
+    }
+
+    .topbar {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 20px;
+      padding: 0 6px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: baseline;
+      gap: 14px;
+    }
+
+    .brand h1 {
+      font-family: "Ma Shan Zheng", cursive;
+      font-size: 48px;
+      font-weight: 400;
+      letter-spacing: 0.08em;
+      line-height: 1;
+      color: var(--ink);
+    }
+
+    .brand p {
+      font-size: 13px;
+      color: var(--wash);
+      writing-mode: vertical-rl;
+      letter-spacing: 0.25em;
+      height: 52px;
+    }
+
+    .meters {
+      display: flex;
+      gap: 18px;
+      text-align: right;
+    }
+
+    .meter span {
+      display: block;
+      font-size: 12px;
+      color: var(--wash);
+      letter-spacing: 0.2em;
+      margin-bottom: 4px;
+    }
+
+    .meter strong {
+      font-family: "Ma Shan Zheng", cursive;
+      font-size: 30px;
+      font-weight: 400;
+      color: var(--ink);
+      display: inline-block;
+      min-width: 1.5em;
+    }
+
+    .meter strong.pop {
+      animation: ink-pop 0.4s ease;
+    }
+
+    @keyframes ink-pop {
+      0% { transform: scale(1); color: var(--ink); }
+      40% { transform: scale(1.15); color: var(--seal); }
+      100% { transform: scale(1); color: var(--ink); }
+    }
+
+    .stage {
+      position: relative;
+      padding: 14px;
+      background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.35), transparent 30%),
+        var(--paper);
+      border: 1px solid var(--line);
+      box-shadow:
+        0 1px 0 rgba(255, 255, 255, 0.5) inset,
+        0 18px 40px rgba(60, 50, 30, 0.12);
+    }
+
+    .stage::before,
+    .stage::after {
+      content: "";
+      position: absolute;
+      width: 46px;
+      height: 46px;
+      border-color: var(--ink-soft);
+      opacity: 0.35;
+      pointer-events: none;
+    }
+
+    .stage::before {
+      top: 8px;
+      left: 8px;
+      border-top: 1px solid;
+      border-left: 1px solid;
+    }
+
+    .stage::after {
+      right: 8px;
+      bottom: 8px;
+      border-right: 1px solid;
+      border-bottom: 1px solid;
+    }
+
+    #game {
+      display: block;
+      width: 100%;
+      height: auto;
+      background: transparent;
+    }
+
+    .overlay {
+      position: absolute;
+      inset: 14px;
+      display: grid;
+      place-items: center;
+      background: rgba(235, 230, 218, 0.72);
+      transition: opacity 0.25s ease;
+    }
+
+    .overlay.hidden {
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .card {
+      width: 240px;
+      text-align: center;
+      padding: 8px;
+    }
+
+    .card h2 {
+      font-family: "Ma Shan Zheng", cursive;
+      font-size: 42px;
+      font-weight: 400;
+      margin-bottom: 8px;
+    }
+
+    .card p {
+      color: var(--wash);
+      font-size: 14px;
+      line-height: 1.8;
+      margin-bottom: 22px;
+    }
+
+    #action {
+      border: 1px solid var(--ink);
+      background: transparent;
+      color: var(--ink);
+      font-family: "Noto Serif SC", serif;
+      font-size: 15px;
+      letter-spacing: 0.3em;
+      padding: 10px 28px;
+      cursor: pointer;
+      transition: background 0.2s ease, color 0.2s ease;
+    }
+
+    #action:hover {
+      background: var(--ink);
+      color: var(--paper);
+    }
+
+    .footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0 6px;
+      color: var(--wash);
+      font-size: 12px;
+      letter-spacing: 0.12em;
+    }
+
+    .seal {
+      width: 36px;
+      height: 36px;
+      border: 2px solid var(--seal);
+      color: var(--seal);
+      display: grid;
+      place-items: center;
+      font-family: "Ma Shan Zheng", cursive;
+      font-size: 18px;
+      transform: rotate(-8deg);
+      opacity: 0.85;
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <header class="topbar">
+      <div class="brand">
+        <h1>墨蛇</h1>
+        <p>穿墙游走</p>
+      </div>
+      <div class="meters">
+        <div class="meter">
+          <span>得分</span>
+          <strong id="score">0</strong>
+        </div>
+        <div class="meter">
+          <span>最高</span>
+          <strong id="best">0</strong>
+        </div>
+      </div>
+    </header>
+
+    <main class="stage">
+      <canvas id="game" width="480" height="480"></canvas>
+      <div id="overlay" class="overlay">
+        <div class="card">
+          <h2 id="title">起笔</h2>
+          <p id="desc">方向键或 WASD 游走<br>空格暂停</p>
+          <button id="action" type="button">落墨</button>
+        </div>
+      </div>
+    </main>
+
+    <footer class="footer">
+      <span>WASD · 空格</span>
+      <div class="seal">墨</div>
+    </footer>
+  </div>
+
+  <script>
+    const canvas = document.getElementById("game");
+    const ctx = canvas.getContext("2d");
+    const scoreEl = document.getElementById("score");
+    const bestEl = document.getElementById("best");
+    const overlay = document.getElementById("overlay");
+    const titleEl = document.getElementById("title");
+    const descEl = document.getElementById("desc");
+    const actionBtn = document.getElementById("action");
+
+    const GRID = 20;
+    const CELL = canvas.width / GRID;
+    const BASE = 135;
+    const MIN = 70;
+    const STORE = "snake-ink-best";
+
+    const MOVE = {
+      up: { x: 0, y: -1 },
+      down: { x: 0, y: 1 },
+      left: { x: -1, y: 0 },
+      right: { x: 1, y: 0 },
+    };
+    const BACK = { up: "down", down: "up", left: "right", right: "left" };
+
+    let snake = [];
+    let fromSnake = [];
+    let dir = "right";
+    let nextDir = "right";
+    let food = { x: 10, y: 10 };
+    let score = 0;
+    let best = Number(localStorage.getItem(STORE)) || 0;
+    let state = "idle";
+    let moveStart = 0;
+    let progress = 1;
+    let speed = BASE;
+    let particles = [];
+    let floats = [];
+    let rings = [];
+    let biteBoost = 0;
+    let paperPattern = null;
+
+    bestEl.textContent = best;
+
+    function makePaper() {
+      const off = document.createElement("canvas");
+      off.width = canvas.width;
+      off.height = canvas.height;
+      const o = off.getContext("2d");
+
+      o.fillStyle = "#ebe6da";
+      o.fillRect(0, 0, off.width, off.height);
+
+      for (let i = 0; i < 4200; i++) {
+        const x = Math.random() * off.width;
+        const y = Math.random() * off.height;
+        const a = 0.015 + Math.random() * 0.04;
+        o.fillStyle = Math.random() > 0.5
+          ? `rgba(90, 80, 60, ${a})`
+          : `rgba(255, 255, 255, ${a})`;
+        o.fillRect(x, y, 1 + Math.random() * 2, 1 + Math.random() * 2);
+      }
+
+      for (let i = 0; i < 18; i++) {
+        o.strokeStyle = `rgba(70, 60, 45, ${0.015 + Math.random() * 0.03})`;
+        o.beginPath();
+        o.moveTo(Math.random() * off.width, 0);
+        o.quadraticCurveTo(
+          Math.random() * off.width,
+          off.height * 0.5,
+          Math.random() * off.width,
+          off.height
+        );
+        o.stroke();
+      }
+
+      return off;
+    }
+
+    paperPattern = makePaper();
+
+    function copySnake(list) {
+      return list.map((p) => ({ x: p.x, y: p.y }));
+    }
+
+    function reset() {
+      snake = [
+        { x: 8, y: 10 },
+        { x: 7, y: 10 },
+        { x: 6, y: 10 },
+      ];
+      fromSnake = copySnake(snake);
+      dir = "right";
+      nextDir = "right";
+      score = 0;
+      speed = BASE;
+      progress = 1;
+      particles = [];
+      floats = [];
+      rings = [];
+      biteBoost = 0;
+      scoreEl.textContent = "0";
+      placeFood();
+    }
+
+    function burst(gx, gy) {
+      const cx = gx * CELL + CELL / 2;
+      const cy = gy * CELL + CELL / 2;
+      const now = performance.now();
+
+      for (let i = 0; i < 16; i++) {
+        const angle = Math.random() * Math.PI * 2;
+        const power = 0.6 + Math.random() * 2.2;
+        particles.push({
+          x: cx,
+          y: cy,
+          vx: Math.cos(angle) * power,
+          vy: Math.sin(angle) * power,
+          life: 1,
+          decay: 0.012 + Math.random() * 0.02,
+          size: 2 + Math.random() * 5,
+          color: Math.random() > 0.3 ? "rgba(28,26,23," : "rgba(166,61,47,",
+        });
+      }
+
+      floats.push({
+        x: cx,
+        y: cy - 4,
+        text: "+1",
+        life: 1,
+        born: now,
+      });
+
+      rings.push({
+        x: cx,
+        y: cy,
+        life: 1,
+        born: now,
+      });
+
+      biteBoost = 1;
+      scoreEl.classList.remove("pop");
+      void scoreEl.offsetWidth;
+      scoreEl.classList.add("pop");
+    }
+
+    function updateEffects() {
+      particles = particles.filter((p) => {
+        p.x += p.vx;
+        p.y += p.vy;
+        p.vx *= 0.93;
+        p.vy *= 0.93;
+        p.life -= p.decay;
+        return p.life > 0;
+      });
+
+      floats = floats.filter((f) => {
+        const age = (performance.now() - f.born) / 700;
+        f.life = 1 - age;
+        f.y -= 0.4;
+        return f.life > 0;
+      });
+
+      rings = rings.filter((r) => {
+        const age = (performance.now() - r.born) / 500;
+        r.life = 1 - age;
+        return r.life > 0;
+      });
+
+      if (biteBoost > 0) biteBoost = Math.max(0, biteBoost - 0.07);
+    }
+
+    function drawEffects() {
+      rings.forEach((r) => {
+        const radius = CELL * (0.3 + (1 - r.life) * 1.3);
+        ctx.beginPath();
+        ctx.arc(r.x, r.y, radius, 0, Math.PI * 2);
+        ctx.strokeStyle = `rgba(166, 61, 47, ${r.life * 0.55})`;
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+      });
+
+      particles.forEach((p) => {
+        ctx.fillStyle = p.color + `${Math.max(0, p.life * 0.7)})`;
+        ctx.beginPath();
+        ctx.ellipse(p.x, p.y, p.size * p.life, p.size * p.life * 0.7, 0, 0, Math.PI * 2);
+        ctx.fill();
+      });
+
+      floats.forEach((f) => {
+        ctx.globalAlpha = Math.max(0, f.life);
+        ctx.fillStyle = "#a63d2f";
+        ctx.font = "600 16px 'Noto Serif SC', serif";
+        ctx.textAlign = "center";
+        ctx.fillText(f.text, f.x, f.y);
+      });
+      ctx.globalAlpha = 1;
+      ctx.textAlign = "start";
+    }
+
+    function placeFood() {
+      const busy = new Set(snake.map((p) => `${p.x},${p.y}`));
+      let spot;
+      do {
+        spot = {
+          x: Math.floor(Math.random() * GRID),
+          y: Math.floor(Math.random() * GRID),
+        };
+      } while (busy.has(`${spot.x},${spot.y}`));
+      food = spot;
+    }
+
+    function turn(name) {
+      if (!MOVE[name] || BACK[dir] === name) return;
+      nextDir = name;
+    }
+
+    function show(title, desc, label) {
+      titleEl.textContent = title;
+      descEl.innerHTML = desc;
+      actionBtn.textContent = label;
+      overlay.classList.remove("hidden");
+    }
+
+    function hide() {
+      overlay.classList.add("hidden");
+    }
+
+    function die() {
+      state = "over";
+      progress = 1;
+      fromSnake = copySnake(snake);
+      show("收笔", `此局得 <b style="color:#a63d2f">${score}</b> 分`, "再写一局");
+    }
+
+    function step() {
+      dir = nextDir;
+      const head = snake[0];
+      const m = MOVE[dir];
+      const next = {
+        x: (head.x + m.x + GRID) % GRID,
+        y: (head.y + m.y + GRID) % GRID,
+      };
+
+      if (snake.some((p) => p.x === next.x && p.y === next.y)) {
+        die();
+        return false;
+      }
+
+      const prev = copySnake(snake);
+      const grew = next.x === food.x && next.y === food.y;
+
+      snake = [next, ...prev];
+      if (!grew) snake.pop();
+
+      fromSnake = copySnake(prev);
+      if (grew) fromSnake.push(prev[prev.length - 1]);
+
+      if (grew) {
+        burst(next.x, next.y);
+        score += 1;
+        scoreEl.textContent = score;
+        speed = Math.max(MIN, BASE - score * 4);
+        if (score > best) {
+          best = score;
+          bestEl.textContent = best;
+          localStorage.setItem(STORE, String(best));
+        }
+        placeFood();
+      }
+
+      return true;
+    }
+
+    function wrapDelta(from, to) {
+      let dx = to.x - from.x;
+      let dy = to.y - from.y;
+      if (dx > GRID / 2) dx -= GRID;
+      if (dx < -GRID / 2) dx += GRID;
+      if (dy > GRID / 2) dy -= GRID;
+      if (dy < -GRID / 2) dy += GRID;
+      return { dx, dy };
+    }
+
+    function lerpPos(from, to, t) {
+      const { dx, dy } = wrapDelta(from, to);
+      return {
+        x: from.x + dx * t,
+        y: from.y + dy * t,
+      };
+    }
+
+    function wrapPoint(p) {
+      return {
+        x: ((p.x % GRID) + GRID) % GRID,
+        y: ((p.y % GRID) + GRID) % GRID,
+      };
+    }
+
+    function crossesSeam(a, b) {
+      return Math.abs(a.x - b.x) > 1.5 || Math.abs(a.y - b.y) > 1.5;
+    }
+
+    function getVisualParts(t) {
+      return snake.map((to, i) => {
+        const from = fromSnake[i] || to;
+        return lerpPos(from, to, t);
+      });
+    }
+
+    function toScreen(p) {
+      return {
+        x: p.x * CELL + CELL / 2,
+        y: p.y * CELL + CELL / 2,
+      };
+    }
+
+    function drawBoard() {
+      ctx.drawImage(paperPattern, 0, 0);
+
+      ctx.strokeStyle = "rgba(74, 69, 60, 0.08)";
+      ctx.lineWidth = 1;
+      for (let i = 0; i <= GRID; i++) {
+        const p = i * CELL;
+        ctx.beginPath();
+        ctx.moveTo(p, 0);
+        ctx.lineTo(p, canvas.height);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(0, p);
+        ctx.lineTo(canvas.width, p);
+        ctx.stroke();
+      }
+    }
+
+    function drawFood() {
+      const cx = food.x * CELL + CELL / 2;
+      const cy = food.y * CELL + CELL / 2;
+      const pulse = 1 + Math.sin(performance.now() / 280) * 0.05;
+      const size = CELL * 0.34 * pulse;
+
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.rotate(-Math.PI / 18);
+
+      ctx.fillStyle = "rgba(166, 61, 47, 0.14)";
+      ctx.beginPath();
+      ctx.arc(1, 2, size * 1.35, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.strokeStyle = "#a63d2f";
+      ctx.lineWidth = 2;
+      ctx.strokeRect(-size, -size, size * 2, size * 2);
+
+      ctx.fillStyle = "#a63d2f";
+      ctx.font = "700 12px 'Noto Serif SC', serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText("果", 0, 1);
+
+      ctx.restore();
+      ctx.textAlign = "start";
+      ctx.textBaseline = "alphabetic";
+    }
+
+    function inkBlob(x, y, r, alpha) {
+      ctx.beginPath();
+      ctx.ellipse(x, y, r * 1.05, r * 0.92, 0, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(28, 26, 23, ${alpha})`;
+      ctx.fill();
+
+      ctx.beginPath();
+      ctx.ellipse(x - r * 0.2, y - r * 0.22, r * 0.35, r * 0.28, 0, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(255, 255, 255, ${alpha * 0.12})`;
+      ctx.fill();
+    }
+
+    function drawStrokeSegments(parts, width, color) {
+      ctx.strokeStyle = color;
+      ctx.lineWidth = width;
+      ctx.lineCap = "round";
+      ctx.lineJoin = "round";
+      ctx.beginPath();
+
+      for (let i = 0; i < parts.length; i++) {
+        const wrapped = wrapPoint(parts[i]);
+        const s = toScreen(wrapped);
+
+        if (i === 0 || crossesSeam(wrapPoint(parts[i - 1]), wrapped)) {
+          ctx.moveTo(s.x, s.y);
+        } else {
+          ctx.lineTo(s.x, s.y);
+        }
+      }
+
+      ctx.stroke();
+    }
+
+    function drawPart(p, i, total) {
+      const points = [p];
+      if (p.x < 0 || p.x >= GRID || p.y < 0 || p.y >= GRID) {
+        points.push(wrapPoint(p));
+      }
+
+      points.forEach((c) => {
+        const s = toScreen(c);
+        const boost = i === 0 ? biteBoost * 3 : 0;
+        const base = i === 0 ? CELL * 0.36 : CELL * 0.3;
+        const alpha = i === 0 ? 0.9 : 0.55 + (1 - i / total) * 0.25;
+        inkBlob(s.x, s.y, base + boost, alpha);
+
+        if (i === 0) {
+          const ox = dir === "left" ? -4 : dir === "right" ? 4 : 0;
+          const oy = dir === "up" ? -4 : dir === "down" ? 4 : 0;
+          ctx.fillStyle = "rgba(235, 230, 218, 0.95)";
+          ctx.beginPath();
+          ctx.arc(s.x - 4 + ox, s.y - 2 + oy, 2.2, 0, Math.PI * 2);
+          ctx.arc(s.x + 4 + ox, s.y - 2 + oy, 2.2, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = "#1c1a17";
+          ctx.beginPath();
+          ctx.arc(s.x - 4 + ox, s.y - 2 + oy, 1.1, 0, Math.PI * 2);
+          ctx.arc(s.x + 4 + ox, s.y - 2 + oy, 1.1, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      });
+    }
+
+    function drawSnake() {
+      const t = Math.min(1, Math.max(0, progress));
+      const parts = getVisualParts(t);
+
+      if (parts.length > 1) {
+        drawStrokeSegments(parts, CELL * 0.78, "rgba(28, 26, 23, 0.18)");
+        drawStrokeSegments(parts, CELL * 0.58, "rgba(28, 26, 23, 0.72)");
+      }
+
+      parts.forEach((p, i) => drawPart(p, i, parts.length));
+    }
+
+    function draw() {
+      drawBoard();
+      drawFood();
+      drawSnake();
+      drawEffects();
+    }
+
+    function start() {
+      reset();
+      state = "running";
+      hide();
+      moveStart = performance.now();
+      progress = 0;
+      requestAnimationFrame(loop);
+    }
+
+    function pause() {
+      if (state !== "running") return;
+      state = "paused";
+      show("停笔", "空格继续", "续墨");
+    }
+
+    function resume() {
+      if (state !== "paused") return;
+      state = "running";
+      hide();
+      moveStart = performance.now() - progress * speed;
+      requestAnimationFrame(loop);
+    }
+
+    function loop(t) {
+      if (state !== "running") return;
+
+      progress = (t - moveStart) / speed;
+
+      if (progress >= 1) {
+        const ok = step();
+        if (!ok) {
+          draw();
+          return;
+        }
+        moveStart = t;
+        progress = 0;
+      }
+
+      updateEffects();
+      draw();
+      requestAnimationFrame(loop);
+    }
+
+    actionBtn.addEventListener("click", () => {
+      if (state === "paused") resume();
+      else start();
+    });
+
+    document.addEventListener("keydown", (e) => {
+      const k = e.key.toLowerCase();
+
+      if (k === " " || k === "spacebar") {
+        e.preventDefault();
+        if (state === "idle" || state === "over") start();
+        else if (state === "running") pause();
+        else if (state === "paused") resume();
+        return;
+      }
+
+      if (state !== "running") return;
+
+      if (["arrowup", "w"].includes(k)) {
+        e.preventDefault();
+        turn("up");
+      } else if (["arrowdown", "s"].includes(k)) {
+        e.preventDefault();
+        turn("down");
+      } else if (["arrowleft", "a"].includes(k)) {
+        e.preventDefault();
+        turn("left");
+      } else if (["arrowright", "d"].includes(k)) {
+        e.preventDefault();
+        turn("right");
+      }
+    });
+
+    fromSnake = [];
+    draw();
+  </script>
+</body>
+</html>
