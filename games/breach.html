@@ -169,6 +169,52 @@
       border: 1px solid var(--line);
     }
 
+    .loadout {
+      position: absolute;
+      left: 50%;
+      bottom: 18px;
+      transform: translateX(-50%);
+      display: flex;
+      gap: 6px;
+      pointer-events: none;
+    }
+
+    .loadout .slot {
+      min-width: 42px;
+      padding: 6px 8px;
+      text-align: center;
+      border: 1px solid var(--line);
+      background: rgba(8, 16, 28, 0.72);
+      color: var(--muted);
+      font-size: 10px;
+      letter-spacing: 0.14em;
+    }
+
+    .loadout .slot b {
+      display: block;
+      font-family: Orbitron, sans-serif;
+      font-size: 12px;
+      color: var(--text);
+      margin-bottom: 2px;
+    }
+
+    .loadout .slot.on {
+      color: var(--cyan);
+      border-color: rgba(60, 246, 255, 0.55);
+      box-shadow: 0 0 12px rgba(60, 246, 255, 0.18);
+    }
+
+    .stance {
+      position: absolute;
+      left: 18px;
+      bottom: 78px;
+      font-size: 10px;
+      letter-spacing: 0.22em;
+      color: var(--amber);
+      min-height: 1em;
+      text-shadow: 0 0 10px rgba(255, 196, 77, 0.35);
+    }
+
     .ammo strong {
       font-family: Orbitron, sans-serif;
       font-size: 36px;
@@ -336,9 +382,16 @@
       </div>
     </div>
     <div class="ammo">
-      <span id="fireModeLabel">SEMI · PULSE RIFLE</span>
-      <strong id="ammo">18</strong><em> / ∞</em>
+      <span id="fireModeLabel">AUTO · PULSE RIFLE</span>
+      <strong id="ammo">100</strong><em id="ammoMax"> / ∞</em>
     </div>
+    <div class="loadout" id="loadout">
+      <div class="slot on" data-slot="1"><b>1</b>主武</div>
+      <div class="slot" data-slot="2"><b>2</b>副武</div>
+      <div class="slot" data-slot="3"><b>3</b>近战</div>
+      <div class="slot" data-slot="4"><b>4</b>投掷</div>
+    </div>
+    <div class="stance" id="stance"></div>
   </div>
 
   <div class="overlay" id="overlay">
@@ -347,8 +400,9 @@
       <h1 id="title">Q-<span>BREACH</span></h1>
       <p id="desc">
         第一人称突袭 · 摧毁节点 · 取走密钥 · 撤离金库<br>
-        <b>WASD</b> 移动 · 鼠标瞄准 · 左键开火<br>
-        R 换弹 · V 单发/连发 · E 交互 · SHIFT 冲刺 · SPACE 跳跃
+        <b>WASD</b> 移动 · 鼠标瞄准 · 左键开火/挥砍/投掷<br>
+        <b>1</b>主武器 · <b>2</b>副武器 · <b>3</b>近战 · <b>4</b>投掷 · 滚轮切枪<br>
+        <b>Ctrl</b> 下蹲 · <b>Shift</b> 静步 · SPACE 跳跃 · R 换弹 · E 交互
       </p>
       <button id="action" type="button">ENGAGE</button>
       <div class="hint">需要键鼠。点击后锁定指针。</div>
@@ -382,12 +436,20 @@
     const WALL_H = 3.35;
     const PLAYER_R = 0.34;
     const PLAYER_H = 1.7;
+    const PLAYER_H_CROUCH = 1.05;
     const EYE = 1.56;
+    const EYE_CROUCH = 0.92;
     const MAX_HP = 100;
-    const MAG_SIZE = 18;
+    const MAG_PRIMARY = 100;
+    const MAG_SECONDARY = 12;
+    const GRENADE_MAX = 2;
     const SEMI_CD = 0.22;
     const AUTO_CD = 0.09;
+    const PISTOL_CD = 0.18;
+    const MELEE_CD = 0.42;
+    const THROW_CD = 0.85;
     const RELOAD_TIME = 1.15;
+    const RELOAD_PISTOL = 0.95;
 
     const canvas = document.getElementById("view");
     const overlay = document.getElementById("overlay");
@@ -401,6 +463,7 @@
     const hpFill = document.getElementById("hpFill");
     const hpBar = document.getElementById("hpBar");
     const ammoEl = document.getElementById("ammo");
+    const ammoMaxEl = document.getElementById("ammoMax");
     const fireModeLabel = document.getElementById("fireModeLabel");
     const hurtEl = document.getElementById("hurt");
     const crosshair = document.getElementById("crosshair");
@@ -409,12 +472,41 @@
     const chipDoor = document.getElementById("chipDoor");
     const mini = document.getElementById("minimap");
     const mctx = mini.getContext("2d");
+    const loadoutEl = document.getElementById("loadout");
+    const stanceEl = document.getElementById("stance");
 
-    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
-    renderer.outputColorSpace = THREE.SRGBColorSpace;
-    renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.25;
+    const WEAPON_DEFS = {
+      1: { name: "PULSE RIFLE", kind: "gun", mag: MAG_PRIMARY, canAuto: true, skin: "blaster-f", scale: 0.9 },
+      2: { name: "SIDEARM", kind: "gun", mag: MAG_SECONDARY, canAuto: false, skin: "blaster-a", scale: 0.72 },
+      3: { name: "COMBAT KNIFE", kind: "melee" },
+      4: { name: "FRAG GRENADE", kind: "throw" },
+    };
+
+    const renderer = new THREE.WebGLRenderer({
+      canvas,
+      antialias: false,
+      alpha: false,
+      powerPreference: "default",
+      failIfMajorPerformanceCaveat: false,
+    });
+    if (THREE.SRGBColorSpace) renderer.outputColorSpace = THREE.SRGBColorSpace;
+    if (THREE.ACESFilmicToneMapping) {
+      renderer.toneMapping = THREE.ACESFilmicToneMapping;
+      renderer.toneMappingExposure = 1.05;
+    }
     renderer.shadowMap.enabled = false;
+    // Cap GPU load — high DPR + AA is a common Chrome/GPU tab-kill cause
+    const MAX_DPR = 1.25;
+
+    canvas.addEventListener("webglcontextlost", (e) => {
+      e.preventDefault();
+      console.error("[Q-BREACH] WebGL context lost");
+      if (sysEl) sysEl.textContent = "GPU LOST · 刷新页面重试";
+      if (titleEl) titleEl.textContent = "GRAPHICS FAULT";
+      if (descEl) descEl.innerHTML = "显卡上下文丢失（驱动/过载）。请刷新，或关闭其它占用 GPU 的窗口后再开。";
+      if (overlay) overlay.classList.remove("hidden");
+      state = "dead";
+    });
 
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0x05070d);
@@ -442,6 +534,7 @@
     const tracers = [];
     const sparks = [];
     const enemyShots = [];
+    const grenades = [];
 
     let spawn = { x: CELL * 1.5, z: CELL * 1.5 };
     let extractPos = new THREE.Vector3();
@@ -456,20 +549,30 @@
     let bob = 0;
     let shootCd = 0;
     let reloadT = 0;
-    let fireMode = "semi";
+    let fireMode = "auto";
     let mouseDown = false;
     let hurtFlash = 0;
     let footAcc = 0;
     let state = "menu";
     let lookingHot = false;
     let promptTarget = null;
+    let weaponSlot = 1;
+    let eyeY = EYE;
+    let bodyH = PLAYER_H;
+    let crouchBlend = 0;
+    const vmRoots = { 1: null, 2: null, 3: null, 4: null };
+    let grenadePrefab = null;
+    let bulletPrefab = null;
+    let smokePrefab = null;
 
     const player = {
       x: 0, y: 0, z: 0,
       vx: 0, vy: 0, vz: 0,
       yaw: 0, pitch: 0,
       hp: MAX_HP,
-      ammo: MAG_SIZE,
+      ammo1: MAG_PRIMARY,
+      ammo2: MAG_SECONDARY,
+      grenades: GRENADE_MAX,
       grounded: true,
       coyote: 0,
       hasKey: false,
@@ -477,6 +580,8 @@
       doorOpen: false,
       extracted: false,
       spawnTime: 0,
+      crouching: false,
+      silent: false,
     };
 
     function cellCenter(cx, cz) {
@@ -500,8 +605,8 @@
       g.stroke();
       const t = new THREE.CanvasTexture(c);
       t.wrapS = t.wrapT = THREE.RepeatWrapping;
-      t.anisotropy = 8;
-      t.colorSpace = THREE.SRGBColorSpace;
+      t.anisotropy = Math.min(4, renderer.capabilities.getMaxAnisotropy?.() || 1);
+      if (THREE.SRGBColorSpace) t.colorSpace = THREE.SRGBColorSpace;
       return t;
     }
 
@@ -564,28 +669,423 @@
       return spr;
     }
 
-    function buildGun() {
-      gun = new THREE.Group();
+    const BLASTER_SKINS = "fghijklmnopqr".split("").map((ch) => "blaster-" + ch);
+    let blasterIdx = 0;
+    let blasterLoading = false;
+    let blasterQueued = null;
+    let blasterColormap = null;
+    const blasterCache = Object.create(null);
+
+    function makeFallbackRifle() {
+      const fallback = new THREE.Group();
+      fallback.name = "gunFallback";
       const body = new THREE.Mesh(
         new THREE.BoxGeometry(0.08, 0.1, 0.42),
         new THREE.MeshLambertMaterial({ color: 0x1a2833, emissive: 0x0a3038 })
       );
-      body.position.set(0.28, -0.22, -0.42);
       const barrel = new THREE.Mesh(
         new THREE.BoxGeometry(0.035, 0.035, 0.32),
         new THREE.MeshLambertMaterial({ color: 0x3cf6ff, emissive: 0x3cf6ff, emissiveIntensity: 0.28 })
       );
-      barrel.position.set(0.28, -0.18, -0.66);
+      barrel.position.set(0, 0.04, -0.24);
       const mag = new THREE.Mesh(
         new THREE.BoxGeometry(0.045, 0.11, 0.07),
         new THREE.MeshLambertMaterial({ color: 0x0e1820 })
       );
-      mag.position.set(0.28, -0.32, -0.36);
-      gun.add(body, barrel, mag);
+      mag.position.set(0, -0.1, 0.06);
+      fallback.add(body, barrel, mag);
+      return fallback;
+    }
+
+    function makePistolView() {
+      const g = new THREE.Group();
+      g.name = "vm-secondary";
+      const body = new THREE.Mesh(
+        new THREE.BoxGeometry(0.055, 0.08, 0.22),
+        new THREE.MeshLambertMaterial({ color: 0x243440, emissive: 0x0a2030 })
+      );
+      const barrel = new THREE.Mesh(
+        new THREE.BoxGeometry(0.028, 0.028, 0.16),
+        new THREE.MeshLambertMaterial({ color: 0xffc44d, emissive: 0x664410, emissiveIntensity: 0.35 })
+      );
+      barrel.position.set(0, 0.03, -0.14);
+      const grip = new THREE.Mesh(
+        new THREE.BoxGeometry(0.04, 0.12, 0.05),
+        new THREE.MeshLambertMaterial({ color: 0x121820 })
+      );
+      grip.position.set(0, -0.08, 0.02);
+      g.add(body, barrel, grip);
+      g.position.set(0.04, -0.02, 0.08);
+      return g;
+    }
+
+    function makeKnifeView() {
+      const g = new THREE.Group();
+      g.name = "vm-melee";
+      const handle = new THREE.Mesh(
+        new THREE.BoxGeometry(0.03, 0.03, 0.12),
+        new THREE.MeshLambertMaterial({ color: 0x1a2228, emissive: 0x101820 })
+      );
+      const guard = new THREE.Mesh(
+        new THREE.BoxGeometry(0.08, 0.02, 0.02),
+        new THREE.MeshLambertMaterial({ color: 0x3cf6ff, emissive: 0x145d66, emissiveIntensity: 0.5 })
+      );
+      guard.position.z = -0.06;
+      const blade = new THREE.Mesh(
+        new THREE.BoxGeometry(0.02, 0.01, 0.28),
+        new THREE.MeshLambertMaterial({ color: 0xd7f7ff, emissive: 0x3cf6ff, emissiveIntensity: 0.25 })
+      );
+      blade.position.z = -0.2;
+      g.add(handle, guard, blade);
+      g.position.set(0.18, -0.12, -0.2);
+      g.rotation.set(0.15, 0.35, 0.4);
+      return g;
+    }
+
+    function makeGrenadeView() {
+      const g = new THREE.Group();
+      g.name = "vm-throw";
+      const body = new THREE.Mesh(
+        new THREE.SphereGeometry(0.07, 10, 10),
+        new THREE.MeshLambertMaterial({ color: 0x2a4030, emissive: 0x143018, emissiveIntensity: 0.4 })
+      );
+      const pin = new THREE.Mesh(
+        new THREE.BoxGeometry(0.02, 0.05, 0.02),
+        new THREE.MeshLambertMaterial({ color: 0xffc44d, emissive: 0x885500, emissiveIntensity: 0.5 })
+      );
+      pin.position.y = 0.08;
+      g.add(body, pin);
+      g.position.set(0.16, -0.14, -0.28);
+      return g;
+    }
+
+    function buildGun() {
+      gun = new THREE.Group();
+      gun.position.set(0.22, -0.22, -0.42);
       muzzle = new THREE.PointLight(0x9dfff0, 0, 6);
-      muzzle.position.set(0.28, -0.18, -0.84);
+      muzzle.position.set(0.02, 0.06, -0.7);
       gun.add(muzzle);
       camera.add(gun);
+
+      vmRoots[1] = new THREE.Group();
+      vmRoots[1].name = "vm-primary";
+      vmRoots[1].add(makeFallbackRifle());
+      vmRoots[2] = makePistolView();
+      vmRoots[3] = makeKnifeView();
+      vmRoots[4] = makeGrenadeView();
+      gun.add(vmRoots[1], vmRoots[2], vmRoots[3], vmRoots[4]);
+
+      const texLoader = new THREE.TextureLoader();
+      blasterColormap = texLoader.load("../assets/blaster/glb/Textures/colormap.png");
+      if (blasterColormap.colorSpace !== undefined && THREE.SRGBColorSpace) {
+        blasterColormap.colorSpace = THREE.SRGBColorSpace;
+      }
+      blasterColormap.flipY = false;
+      setTimeout(() => {
+        try {
+          loadBlasterSkin(0);
+          loadSecondarySkin();
+          loadLocalProps();
+        } catch (err) {
+          console.warn("[Q-BREACH] skin bootstrap failed", err);
+        }
+      }, 120);
+      applyWeaponVisibility();
+    }
+
+    function loadLocalProps() {
+      parseKenneyGlb("../assets/blaster/glb/grenade-b.glb")
+        .then((model) => {
+          grenadePrefab = model;
+          grenadePrefab.scale.setScalar(0.55);
+          if (vmRoots[4]) {
+            while (vmRoots[4].children.length) vmRoots[4].remove(vmRoots[4].children[0]);
+            const held = grenadePrefab.clone(true);
+            held.position.set(0.02, -0.01, -0.04);
+            held.rotation.set(0.2, 0.4, 0.1);
+            vmRoots[4].add(held);
+          }
+        })
+        .catch((err) => console.warn("[Q-BREACH] grenade load failed", err));
+
+      parseKenneyGlb("../assets/blaster/glb/bullet-foam.glb")
+        .then((model) => {
+          bulletPrefab = model;
+          bulletPrefab.scale.setScalar(0.35);
+        })
+        .catch((err) => console.warn("[Q-BREACH] bullet load failed", err));
+
+      parseKenneyGlb("../assets/blaster/glb/smoke.glb")
+        .then((model) => {
+          smokePrefab = model;
+          smokePrefab.scale.setScalar(1.2);
+        })
+        .catch((err) => console.warn("[Q-BREACH] smoke load failed", err));
+    }
+
+    function applyWeaponVisibility() {
+      for (const id of [1, 2, 3, 4]) {
+        if (vmRoots[id]) vmRoots[id].visible = id === weaponSlot;
+      }
+      if (muzzle) muzzle.visible = weaponSlot === 1 || weaponSlot === 2;
+    }
+
+    function switchWeapon(slot) {
+      if (state !== "play" && state !== "menu") return;
+      slot = slot | 0;
+      if (!WEAPON_DEFS[slot] || slot === weaponSlot) {
+        if (slot === weaponSlot) updateAmmoHud();
+        return;
+      }
+      if (reloadT > 0 && (weaponSlot === 1 || weaponSlot === 2)) {
+        reloadT = 0;
+      }
+      weaponSlot = slot;
+      if (weaponSlot === 1) fireMode = "auto";
+      else if (weaponSlot === 2) fireMode = "semi";
+      shootCd = Math.min(shootCd, 0.12);
+      applyWeaponVisibility();
+      updateAmmoHud();
+      updateLoadoutHud();
+      blip(480 + slot * 40, 0.05, "triangle", 0.03);
+      const toast = document.getElementById("objective");
+      if (toast) {
+        if (!toast.dataset.base) toast.dataset.base = toast.textContent;
+        toast.textContent = "WEAPON · " + WEAPON_DEFS[slot].name;
+        clearTimeout(switchWeapon._toast);
+        switchWeapon._toast = setTimeout(() => {
+          if (toast.textContent.indexOf("WEAPON ·") === 0) toast.textContent = toast.dataset.base;
+        }, 1100);
+      }
+    }
+    function updateLoadoutHud() {
+      if (!loadoutEl) return;
+      loadoutEl.querySelectorAll(".slot").forEach((el) => {
+        el.classList.toggle("on", Number(el.dataset.slot) === weaponSlot);
+      });
+    }
+
+    function currentAmmo() {
+      return weaponSlot === 1 ? player.ammo1 : weaponSlot === 2 ? player.ammo2 : 0;
+    }
+
+    function setCurrentAmmo(v) {
+      if (weaponSlot === 1) player.ammo1 = v;
+      else if (weaponSlot === 2) player.ammo2 = v;
+    }
+
+    function currentMagSize() {
+      return weaponSlot === 1 ? MAG_PRIMARY : MAG_SECONDARY;
+    }
+
+    function disposeObject3D(obj) {
+      if (!obj) return;
+      obj.traverse((child) => {
+        if (child.geometry) child.geometry.dispose();
+        if (child.material) {
+          const mats = Array.isArray(child.material) ? child.material : [child.material];
+          for (let i = 0; i < mats.length; i++) {
+            const m = mats[i];
+            if (m && m.map && m.map !== blasterColormap) m.map.dispose();
+            if (m) m.dispose();
+          }
+        }
+      });
+    }
+
+    function clearKenneyBlaster(root) {
+      const host = root || (vmRoots[1] || gun);
+      if (!host) return;
+      const old = host.getObjectByName("kenneyBlaster");
+      if (old) {
+        host.remove(old);
+        disposeObject3D(old);
+      }
+    }
+
+    function readGlbAccessor(json, bin, accessorIndex) {
+      const acc = json.accessors[accessorIndex];
+      const view = json.bufferViews[acc.bufferView];
+      const start = (view.byteOffset || 0) + (acc.byteOffset || 0);
+      const comps = ({ SCALAR: 1, VEC2: 2, VEC3: 3, VEC4: 4 })[acc.type] || 3;
+      const count = acc.count | 0;
+      if (count <= 0 || count > 500000) throw new Error("bad accessor count");
+      let Typed = Float32Array;
+      let bytesPer = 4;
+      if (acc.componentType === 5123) { Typed = Uint16Array; bytesPer = 2; }
+      else if (acc.componentType === 5125) { Typed = Uint32Array; bytesPer = 4; }
+      else if (acc.componentType === 5121) { Typed = Uint8Array; bytesPer = 1; }
+      else if (acc.componentType === 5126) { Typed = Float32Array; bytesPer = 4; }
+      const stride = view.byteStride || (comps * bytesPer);
+      const need = count * comps;
+      // Always copy — avoids unaligned TypedArray views that can throw / fault
+      const out = new Typed(need);
+      const dvBin = new DataView(bin.buffer, bin.byteOffset, bin.byteLength);
+      for (let i = 0; i < count; i++) {
+        const base = start + i * stride;
+        for (let c = 0; c < comps; c++) {
+          const o = base + c * bytesPer;
+          if (o + bytesPer > bin.byteLength) throw new Error("accessor OOB");
+          if (Typed === Float32Array) out[i * comps + c] = dvBin.getFloat32(o, true);
+          else if (Typed === Uint16Array) out[i * comps + c] = dvBin.getUint16(o, true);
+          else if (Typed === Uint32Array) out[i * comps + c] = dvBin.getUint32(o, true);
+          else out[i * comps + c] = dvBin.getUint8(o);
+        }
+      }
+      return out;
+    }
+
+    function meshFromPrimitive(json, bin, primitive) {
+      const geo = new THREE.BufferGeometry();
+      const pos = readGlbAccessor(json, bin, primitive.attributes.POSITION);
+      geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+      if (primitive.attributes.NORMAL != null) {
+        geo.setAttribute("normal", new THREE.BufferAttribute(readGlbAccessor(json, bin, primitive.attributes.NORMAL), 3));
+      } else {
+        geo.computeVertexNormals();
+      }
+      if (primitive.attributes.TEXCOORD_0 != null) {
+        geo.setAttribute("uv", new THREE.BufferAttribute(readGlbAccessor(json, bin, primitive.attributes.TEXCOORD_0), 2));
+      }
+      if (primitive.indices != null) {
+        const idx = readGlbAccessor(json, bin, primitive.indices);
+        geo.setIndex(new THREE.BufferAttribute(idx, 1));
+      }
+      const mat = new THREE.MeshLambertMaterial({
+        map: blasterColormap,
+        color: 0xffffff,
+        emissive: 0x142028,
+        emissiveIntensity: 0.4,
+      });
+      return new THREE.Mesh(geo, mat);
+    }
+
+    async function parseKenneyGlb(url) {
+      if (blasterCache[url]) return blasterCache[url].clone(true);
+      const res = await fetch(url);
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      const buf = await res.arrayBuffer();
+      const u8 = new Uint8Array(buf);
+      const dv = new DataView(buf);
+      if (dv.getUint32(0, true) !== 0x46546C67) throw new Error("not glb");
+      const jsonLen = dv.getUint32(12, true);
+      const json = JSON.parse(new TextDecoder().decode(u8.subarray(20, 20 + jsonLen)));
+      // chunk1 header starts immediately after json payload (jsonLen is 4-byte aligned)
+      const binLen = dv.getUint32(20 + jsonLen, true);
+      const bin = u8.subarray(28 + jsonLen, 28 + jsonLen + binLen);
+
+      const root = new THREE.Group();
+      root.name = "kenneyBlaster";
+      const nodes = json.nodes || [];
+      const meshes = json.meshes || [];
+
+      function buildNode(nodeIndex) {
+        const node = nodes[nodeIndex];
+        const group = new THREE.Group();
+        group.name = node.name || ("node-" + nodeIndex);
+        if (node.translation) group.position.fromArray(node.translation);
+        if (node.rotation) group.quaternion.fromArray(node.rotation);
+        if (node.scale) group.scale.fromArray(node.scale);
+        if (node.mesh != null) {
+          const meshDef = meshes[node.mesh];
+          for (let p = 0; p < meshDef.primitives.length; p++) {
+            group.add(meshFromPrimitive(json, bin, meshDef.primitives[p]));
+          }
+        }
+        if (node.children) {
+          for (let c = 0; c < node.children.length; c++) {
+            group.add(buildNode(node.children[c]));
+          }
+        }
+        return group;
+      }
+
+      const sceneNodes = (json.scenes && json.scenes[json.scene || 0].nodes) || [0];
+      for (let i = 0; i < sceneNodes.length; i++) root.add(buildNode(sceneNodes[i]));
+      blasterCache[url] = root;
+      return root.clone(true);
+    }
+
+    function mountBlasterModel(model, slot) {
+      const host = vmRoots[slot] || vmRoots[1];
+      if (!host || !gun) return;
+      clearKenneyBlaster(host);
+      model.name = "kenneyBlaster";
+      model.rotation.set(0, Math.PI, 0);
+      const def = WEAPON_DEFS[slot] || WEAPON_DEFS[1];
+      model.scale.setScalar(def.scale || 0.9);
+      model.position.set(slot === 2 ? 0.02 : 0.05, slot === 2 ? -0.04 : -0.08, slot === 2 ? 0.14 : 0.1);
+      const fallback = host.getObjectByName("gunFallback");
+      if (fallback) host.remove(fallback);
+      if (slot === 2) {
+        // replace procedural pistol meshes with glb
+        while (host.children.length) host.remove(host.children[0]);
+      }
+      host.add(model);
+      if (slot === weaponSlot || slot === 1) {
+        const box = new THREE.Box3().setFromObject(model);
+        const size = box.getSize(new THREE.Vector3());
+        if (muzzle && (slot === 1 || weaponSlot === slot)) {
+          muzzle.position.set(0.05, 0.02, -Math.max(0.35, size.z * 0.55));
+        }
+      }
+    }
+
+    function loadSecondarySkin() {
+      const skin = WEAPON_DEFS[2].skin;
+      const url = "../assets/blaster/glb/" + skin + ".glb";
+      parseKenneyGlb(url)
+        .then((model) => mountBlasterModel(model, 2))
+        .catch((err) => console.warn("[Q-BREACH] secondary load failed", err));
+    }
+
+    function loadBlasterSkin(idx) {
+      if (!gun || !vmRoots[1]) return;
+      blasterIdx = ((idx % BLASTER_SKINS.length) + BLASTER_SKINS.length) % BLASTER_SKINS.length;
+      const skin = BLASTER_SKINS[blasterIdx];
+      const objEl = document.getElementById("objective");
+      if (objEl && weaponSlot === 1) {
+        if (!objEl.dataset.base) objEl.dataset.base = objEl.textContent;
+        objEl.textContent = "SKIN · " + skin.toUpperCase();
+        clearTimeout(loadBlasterSkin._toast);
+        loadBlasterSkin._toast = setTimeout(() => {
+          if (objEl.textContent.indexOf("SKIN ·") === 0) objEl.textContent = objEl.dataset.base;
+        }, 1400);
+      }
+
+      if (blasterLoading) {
+        blasterQueued = skin;
+        return;
+      }
+      blasterLoading = true;
+      const url = "../assets/blaster/glb/" + skin + ".glb";
+      const request = skin;
+      parseKenneyGlb(url)
+        .then((model) => {
+          blasterLoading = false;
+          if (blasterQueued && blasterQueued !== request) {
+            const next = blasterQueued;
+            blasterQueued = null;
+            const nextIdx = BLASTER_SKINS.indexOf(next);
+            if (nextIdx >= 0) {
+              loadBlasterSkin(nextIdx);
+              return;
+            }
+          }
+          blasterQueued = null;
+          mountBlasterModel(model, 1);
+        })
+        .catch((err) => {
+          blasterLoading = false;
+          blasterQueued = null;
+          console.warn("[Q-BREACH] blaster load failed", skin, err);
+          if (objEl) objEl.textContent = "SKIN LOAD FAIL · " + skin;
+        });
+    }
+
+    function cycleBlaster(dir) {
+      loadBlasterSkin(blasterIdx + dir);
+      if (typeof blip === "function") blip(660, 0.04, "triangle", 0.03, 80);
     }
 
     function buildLevel() {
@@ -627,12 +1127,12 @@
       scene.add(sun);
 
       if (!flashLight) {
-        flashLight = new THREE.SpotLight(0xbffcff, 55, 32, Math.PI / 6.2, 0.38, 1);
+        flashLight = new THREE.SpotLight(0xbffcff, 2.2, 28, Math.PI / 5.5, 0.45, 1);
         flashLight.position.set(0.15, 0.05, 0.1);
         flashLight.target.position.set(0, 0, -4);
         camera.add(flashLight);
         camera.add(flashLight.target);
-        muzzleLight = new THREE.PointLight(0x7ff6ff, 0, 8);
+        muzzleLight = new THREE.PointLight(0x7ff6ff, 0, 6);
         camera.add(muzzleLight);
       }
 
@@ -663,7 +1163,7 @@
             );
             group.add(core);
             group.add(makeGlowSprite("rgba(157,255,106,0.9)", 1.8));
-            const light = new THREE.PointLight(0x9dff6a, 6, 10);
+            const light = new THREE.PointLight(0x9dff6a, 1.8, 8);
             group.add(light);
             world.add(group);
             node = { mesh: group, core, hp: 70, alive: true, light };
@@ -712,7 +1212,7 @@
             const beacon = makeGlowSprite("rgba(60,246,255,0.95)", 3.2);
             beacon.position.set(c.x, 1.4, c.z);
             world.add(beacon);
-            const light = new THREE.PointLight(0x3cf6ff, 8, 12);
+            const light = new THREE.PointLight(0x3cf6ff, 2.2, 10);
             light.position.set(c.x, 1.6, c.z);
             light.userData.level = true;
             scene.add(light);
@@ -726,11 +1226,11 @@
       addCrate(14.8 * CELL, 12.2 * CELL);
       addCrate(16.6 * CELL, 10.3 * CELL);
 
-      const hallLight = new THREE.PointLight(0x3cf6ff, 7, 14);
+      const hallLight = new THREE.PointLight(0x3cf6ff, 2.0, 12);
       hallLight.position.set(12 * CELL, 2.4, 2.5 * CELL);
       hallLight.userData.level = true;
       scene.add(hallLight);
-      const vaultLight = new THREE.PointLight(0xff3cad, 6, 16);
+      const vaultLight = new THREE.PointLight(0xff3cad, 1.8, 12);
       vaultLight.position.set(10 * CELL, 2.2, 11.2 * CELL);
       vaultLight.userData.level = true;
       scene.add(vaultLight);
@@ -830,7 +1330,9 @@
       player.yaw = Math.PI + 0.55;
       player.pitch = 0;
       player.hp = MAX_HP;
-      player.ammo = MAG_SIZE;
+      player.ammo1 = MAG_PRIMARY;
+      player.ammo2 = MAG_SECONDARY;
+      player.grenades = GRENADE_MAX;
       player.grounded = true;
       player.coyote = 0;
       player.hasKey = false;
@@ -838,41 +1340,63 @@
       player.doorOpen = false;
       player.extracted = false;
       player.spawnTime = performance.now();
+      player.crouching = false;
+      player.silent = false;
+      weaponSlot = 1;
+      fireMode = "auto";
+      eyeY = EYE;
+      bodyH = PLAYER_H;
+      crouchBlend = 0;
       shootCd = 0;
       reloadT = 0;
       mouseDown = false;
       hurtFlash = 0;
+      for (let i = grenades.length - 1; i >= 0; i--) {
+        world.remove(grenades[i].mesh);
+        grenades.splice(i, 1);
+      }
       camera.rotation.set(0, player.yaw, 0);
+      applyWeaponVisibility();
       syncCamera();
       updateAmmoHud();
+      updateLoadoutHud();
+      if (stanceEl) stanceEl.textContent = "";
     }
 
     function updateAmmoHud() {
-      ammoEl.textContent = String(player.ammo).padStart(2, "0");
-      fireModeLabel.textContent = (fireMode === "auto" ? "AUTO" : "SEMI") + " · PULSE RIFLE";
-      if (reloadT > 0) fireModeLabel.textContent = "RELOADING…";
-    }
-
-    function toggleFireMode() {
-      if (state !== "play" || reloadT > 0) return;
-      fireMode = fireMode === "semi" ? "auto" : "semi";
-      blip(fireMode === "auto" ? 380 : 260, 0.06, "square", 0.04);
-      updateAmmoHud();
+      const def = WEAPON_DEFS[weaponSlot];
+      if (def.kind === "gun") {
+        ammoEl.textContent = String(currentAmmo()).padStart(2, "0");
+        if (ammoMaxEl) ammoMaxEl.textContent = " / ∞";
+        if (weaponSlot === 1) fireModeLabel.textContent = "AUTO · " + def.name;
+        else fireModeLabel.textContent = "SEMI · " + def.name;
+        if (reloadT > 0) fireModeLabel.textContent = "RELOADING…";
+      } else if (def.kind === "melee") {
+        ammoEl.textContent = "--";
+        if (ammoMaxEl) ammoMaxEl.textContent = "";
+        fireModeLabel.textContent = "MELEE · " + def.name;
+      } else {
+        ammoEl.textContent = String(player.grenades);
+        if (ammoMaxEl) ammoMaxEl.textContent = " / " + GRENADE_MAX;
+        fireModeLabel.textContent = "THROW · " + def.name;
+      }
     }
 
     function startReload() {
       if (state !== "play" || reloadT > 0) return;
-      if (player.ammo >= MAG_SIZE) {
+      if (weaponSlot !== 1 && weaponSlot !== 2) return;
+      const mag = currentMagSize();
+      if (currentAmmo() >= mag) {
         blip(140, 0.05, "triangle", 0.03);
         return;
       }
-      reloadT = RELOAD_TIME;
+      reloadT = weaponSlot === 2 ? RELOAD_PISTOL : RELOAD_TIME;
       blip(180, 0.08, "triangle", 0.04, 90);
       updateAmmoHud();
     }
 
     function finishReload() {
-      player.ammo = MAG_SIZE;
+      setCurrentAmmo(currentMagSize());
       reloadT = 0;
       blip(420, 0.1, "square", 0.05, 700);
       updateAmmoHud();
@@ -881,7 +1405,7 @@
     function playerBox(px, py, pz) {
       return {
         min: new THREE.Vector3(px - PLAYER_R, py, pz - PLAYER_R),
-        max: new THREE.Vector3(px + PLAYER_R, py + PLAYER_H, pz + PLAYER_R),
+        max: new THREE.Vector3(px + PLAYER_R, py + bodyH, pz + PLAYER_R),
       };
     }
 
@@ -904,7 +1428,7 @@
           else pz = w.max.z + PLAYER_R;
         } else {
           if (player.vy > 0) {
-            py = w.min.y - PLAYER_H;
+            py = w.min.y - bodyH;
             player.vy = 0;
           } else {
             py = w.max.y;
@@ -913,7 +1437,7 @@
           }
         }
         box.min.set(px - PLAYER_R, py, pz - PLAYER_R);
-        box.max.set(px + PLAYER_R, py + PLAYER_H, pz + PLAYER_R);
+        box.max.set(px + PLAYER_R, py + bodyH, pz + PLAYER_R);
       }
       return { x: px, y: py, z: pz };
     }
@@ -942,22 +1466,38 @@
 
     function syncCamera() {
       const walk = Math.hypot(player.vx, player.vz);
-      const bobAmt = player.grounded && walk > 1 ? Math.sin(bob) * 0.045 : 0;
-      camera.position.set(player.x, player.y + EYE + bobAmt, player.z);
+      const bobAmt = player.grounded && walk > 1 && !player.crouching && !player.silent ? Math.sin(bob) * 0.045 : 0;
+      camera.position.set(player.x, player.y + eyeY + bobAmt, player.z);
       camera.rotation.y = player.yaw;
       camera.rotation.x = player.pitch;
       if (gun) {
         const sway = player.grounded && walk > 1 ? Math.sin(bob * 0.5) * 0.012 : 0;
-        gun.position.x += (sway - gun.position.x) * 0.18;
-        gun.position.y += (-bobAmt * 0.4 - gun.position.y) * 0.18;
+        const crouchDrop = player.crouching ? -0.06 : 0;
+        const baseX = weaponSlot === 3 ? 0.12 : 0.22;
+        const baseY = -0.22 + crouchDrop;
+        gun.position.x += (baseX + sway - gun.position.x) * 0.18;
+        gun.position.y += (baseY - bobAmt * 0.4 - gun.position.y) * 0.18;
         gun.rotation.x *= 0.78;
+        gun.rotation.z *= 0.85;
       }
     }
 
     function tryMove(dt) {
-      const sprint = keys.ShiftLeft || keys.ShiftRight;
-      const speed = sprint ? 8.6 : 5.7;
-      const accel = player.grounded ? 48 : 18;
+      // CF-like: Shift = 静步, Ctrl = 下蹲 (no sprint)
+      const wantCrouch = !!(keys.ControlLeft || keys.ControlRight);
+      player.silent = !!(keys.ShiftLeft || keys.ShiftRight) && !wantCrouch;
+      player.crouching = wantCrouch;
+
+      const targetCrouch = wantCrouch ? 1 : 0;
+      crouchBlend += (targetCrouch - crouchBlend) * Math.min(1, dt * 12);
+      eyeY = EYE + (EYE_CROUCH - EYE) * crouchBlend;
+      bodyH = PLAYER_H + (PLAYER_H_CROUCH - PLAYER_H) * crouchBlend;
+
+      let speed = 5.7;
+      if (player.crouching) speed = 2.45;
+      else if (player.silent) speed = 2.85;
+
+      const accel = player.grounded ? (player.silent || player.crouching ? 30 : 48) : 18;
       const damp = player.grounded ? 16 : 3;
 
       fwd.set(-Math.sin(player.yaw), 0, -Math.cos(player.yaw));
@@ -987,7 +1527,7 @@
       if (player.grounded) player.coyote = 0.1;
       else player.coyote -= dt;
 
-      if ((keys.Space || keys.Spacebar) && player.coyote > 0 && player.vy <= 0.1) {
+      if ((keys.Space || keys.Spacebar) && player.coyote > 0 && player.vy <= 0.1 && !player.crouching) {
         player.vy = 7.1;
         player.grounded = false;
         player.coyote = 0;
@@ -1005,56 +1545,76 @@
       player.y = n.y;
       if (player.y < 0) { player.y = 0; player.vy = 0; player.grounded = true; }
 
+      if (stanceEl) {
+        if (player.crouching) stanceEl.textContent = "CROUCH";
+        else if (player.silent) stanceEl.textContent = "SILENT";
+        else stanceEl.textContent = "";
+      }
+
       if (player.grounded && il > 0) {
-        bob += dt * (sprint ? 16 : 11);
-        footAcc += dt * (sprint ? 3.2 : 2.2);
-        if (footAcc > 1) {
+        const noisy = !player.silent && !player.crouching;
+        bob += dt * (noisy ? 11 : 6);
+        if (noisy) {
+          footAcc += dt * 2.2;
+          if (footAcc > 1) {
+            footAcc = 0;
+            blip(90, 0.04, "sine", 0.02);
+          }
+        } else {
           footAcc = 0;
-          blip(90, 0.04, "sine", 0.02);
         }
       }
     }
 
     function shoot() {
       if (state !== "play" || shootCd > 0 || reloadT > 0) return;
-      if (player.ammo <= 0) {
+      const def = WEAPON_DEFS[weaponSlot];
+      if (def.kind === "melee") {
+        meleeAttack();
+        return;
+      }
+      if (def.kind === "throw") {
+        throwGrenade();
+        return;
+      }
+      if (currentAmmo() <= 0) {
         blip(90, 0.08, "sawtooth", 0.05);
         startReload();
         return;
       }
-      player.ammo--;
-      shootCd = fireMode === "auto" ? AUTO_CD : SEMI_CD;
+      setCurrentAmmo(currentAmmo() - 1);
+      if (weaponSlot === 2) shootCd = PISTOL_CD;
+      else shootCd = AUTO_CD;
       updateAmmoHud();
-      blip(520, 0.07, "square", 0.05, 140);
+      blip(weaponSlot === 2 ? 640 : 520, 0.07, "square", 0.05, 140);
       if (gun) gun.rotation.x = 0.12;
-      player.pitch += fireMode === "auto" ? 0.008 : 0.014;
-      if (muzzle) muzzle.intensity = 18;
-      if (muzzleLight) muzzleLight.intensity = 10;
+      player.pitch += weaponSlot === 2 ? 0.01 : 0.008;
+      if (muzzle) muzzle.intensity = 4;
+      if (muzzleLight) muzzleLight.intensity = 2.5;
 
       raycaster.setFromCamera(aim, camera);
       const hits = raycaster.intersectObject(world, true);
-      let hitPoint = tmp.copy(camera.position).addScaledVector(raycaster.ray.direction, 40);
-      let hitKind = null;
-      let hitObj = null;
+      let hitPoint = tmp.copy(camera.position).addScaledVector(raycaster.ray.direction, weaponSlot === 2 ? 32 : 40);
       if (hits.length) {
         for (let i = 0; i < hits.length; i++) {
           const h = hits[i];
-          if (h.object.parent === gun || gun && gun.children.includes(h.object)) continue;
+          if (gun && (h.object === gun || gun.getObjectById(h.object.id))) continue;
           hitPoint = h.point.clone();
-          hitKind = h.object.userData.kind || (h.object.parent && h.object.parent.userData.kind);
-          hitObj = h.object;
           break;
         }
       }
 
       spawnTracer(camera.position.clone().add(new THREE.Vector3(0.18, -0.12, 0).applyQuaternion(camera.quaternion)), hitPoint);
 
+      const nodeDmg = weaponSlot === 2 ? 22 : 34;
+      const enemyDmg = weaponSlot === 2 ? 28 : 38;
+
       if (node && node.alive) {
         const nd = node.mesh.position.distanceTo(raycaster.ray.origin);
         const closest = new THREE.Vector3();
         raycaster.ray.closestPointToPoint(node.mesh.position, closest);
         if (closest.distanceTo(node.mesh.position) < 0.55 && nd < 28 && nd <= camera.position.distanceTo(hitPoint) + 0.4) {
-          damageNode(34);
+          damageNode(nodeDmg);
           spawnSpark(node.mesh.position.clone(), 0x9dff6a);
           return;
         }
@@ -1067,7 +1627,7 @@
         const d = tmp2.distanceTo(e.mesh.position);
         const along = e.mesh.position.distanceTo(camera.position);
         if (d < 0.55 && along < camera.position.distanceTo(hitPoint) + 0.5) {
-          damageEnemy(e, 38);
+          damageEnemy(e, enemyDmg);
           spawnSpark(e.mesh.position.clone(), 0xff3cad);
           return;
         }
@@ -1076,15 +1636,157 @@
       spawnSpark(hitPoint, 0x3cf6ff);
     }
 
-    function spawnTracer(from, to) {
-      const dir = to.clone().sub(from);
-      const len = dir.length();
-      const geom = new THREE.BoxGeometry(0.02, 0.02, len);
-      const mesh = new THREE.Mesh(geom, new THREE.MeshBasicMaterial({ color: 0x9dfff8 }));
-      mesh.position.copy(from).add(dir.multiplyScalar(0.5));
-      mesh.lookAt(to);
+    function meleeAttack() {
+      shootCd = MELEE_CD;
+      blip(180, 0.08, "sawtooth", 0.06, 60);
+      if (vmRoots[3]) {
+        vmRoots[3].rotation.z = -0.9;
+        vmRoots[3].rotation.x = 0.35;
+      }
+      if (gun) gun.rotation.z = -0.5;
+
+      raycaster.setFromCamera(aim, camera);
+      const reach = 2.15;
+      let hit = false;
+
+      if (node && node.alive) {
+        const closest = new THREE.Vector3();
+        raycaster.ray.closestPointToPoint(node.mesh.position, closest);
+        const along = closest.distanceTo(raycaster.ray.origin);
+        if (closest.distanceTo(node.mesh.position) < 0.65 && along < reach) {
+          damageNode(55);
+          spawnSpark(node.mesh.position.clone(), 0x9dff6a);
+          hit = true;
+        }
+      }
+
+      for (let i = 0; i < enemies.length && !hit; i++) {
+        const e = enemies[i];
+        if (!e.alive) continue;
+        raycaster.ray.closestPointToPoint(e.mesh.position, tmp2);
+        const along = tmp2.distanceTo(raycaster.ray.origin);
+        if (tmp2.distanceTo(e.mesh.position) < 0.7 && along < reach) {
+          damageEnemy(e, 70);
+          spawnSpark(e.mesh.position.clone(), 0xff3cad);
+          hit = true;
+        }
+      }
+      if (!hit) blip(90, 0.04, "triangle", 0.02);
+    }
+
+    function throwGrenade() {
+      if (player.grenades <= 0) {
+        blip(90, 0.08, "sawtooth", 0.05);
+        return;
+      }
+      player.grenades--;
+      shootCd = THROW_CD;
+      updateAmmoHud();
+      blip(140, 0.1, "triangle", 0.05, 40);
+      if (gun) gun.rotation.x = -0.35;
+
+      let mesh;
+      if (grenadePrefab) {
+        mesh = grenadePrefab.clone(true);
+        mesh.scale.setScalar(0.7);
+      } else {
+        mesh = new THREE.Mesh(
+          new THREE.SphereGeometry(0.11, 10, 10),
+          new THREE.MeshLambertMaterial({ color: 0x2a4030, emissive: 0x1a5020, emissiveIntensity: 0.5 })
+        );
+      }
+      const origin = camera.position.clone().add(new THREE.Vector3(0.25, -0.12, -0.45).applyQuaternion(camera.quaternion));
+      mesh.position.copy(origin);
       world.add(mesh);
-      tracers.push({ mesh, life: 0.05 });
+      const dir = new THREE.Vector3();
+      camera.getWorldDirection(dir);
+      grenades.push({
+        mesh,
+        vx: dir.x * 14,
+        vy: dir.y * 14 + 3.2,
+        vz: dir.z * 14,
+        life: 1.55,
+        armed: true,
+        isGroup: !!grenadePrefab,
+      });
+    }
+
+    function explodeGrenade(g) {
+      const pos = g.mesh.position.clone();
+      world.remove(g.mesh);
+      if (g.isGroup) disposeObject3D(g.mesh);
+      else {
+        if (g.mesh.geometry) g.mesh.geometry.dispose();
+        if (g.mesh.material) g.mesh.material.dispose();
+      }
+      blip(70, 0.25, "sawtooth", 0.09, 30);
+      if (smokePrefab) {
+        const smoke = smokePrefab.clone(true);
+        smoke.position.copy(pos);
+        smoke.scale.setScalar(1.6);
+        world.add(smoke);
+        sparks.push({ mesh: smoke, life: 0.45, isGroup: true });
+      }
+      for (let i = 0; i < 8; i++) {
+        const spark = pos.clone().add(new THREE.Vector3((Math.random() - 0.5) * 1.2, Math.random() * 0.8, (Math.random() - 0.5) * 1.2));
+        spawnSpark(spark, i % 2 ? 0xffc44d : 0xff3cad);
+      }
+      const radius = 5.2;
+      for (let i = 0; i < enemies.length; i++) {
+        const e = enemies[i];
+        if (!e.alive) continue;
+        const d = e.mesh.position.distanceTo(pos);
+        if (d < radius) damageEnemy(e, Math.max(25, 95 * (1 - d / radius)));
+      }
+      if (node && node.alive && node.mesh.position.distanceTo(pos) < radius) {
+        damageNode(60);
+      }
+      const pd = Math.hypot(player.x - pos.x, player.z - pos.z);
+      if (pd < radius && Math.abs((player.y + eyeY) - pos.y) < 3.5) {
+        hurt(Math.max(12, 55 * (1 - pd / radius)));
+      }
+    }
+
+    function updateGrenades(dt) {
+      for (let i = grenades.length - 1; i >= 0; i--) {
+        const g = grenades[i];
+        g.life -= dt;
+        g.vy -= 18 * dt;
+        const nx = g.mesh.position.x + g.vx * dt;
+        const ny = g.mesh.position.y + g.vy * dt;
+        const nz = g.mesh.position.z + g.vz * dt;
+        const pb = {
+          min: new THREE.Vector3(nx - 0.1, ny - 0.1, nz - 0.1),
+          max: new THREE.Vector3(nx + 0.1, ny + 0.1, nz + 0.1),
+        };
+        let hit = false;
+        for (let c = 0; c < colliders.length; c++) {
+          if (colliders[c].live && overlap(pb, colliders[c])) { hit = true; break; }
+        }
+        if (ny < 0.12) {
+          g.mesh.position.y = 0.12;
+          g.vy *= -0.35;
+          g.vx *= 0.7;
+          g.vz *= 0.7;
+          if (Math.abs(g.vy) < 1.2) g.vy = 0;
+        } else if (!hit) {
+          g.mesh.position.set(nx, ny, nz);
+        } else {
+          g.vx *= -0.4;
+          g.vz *= -0.4;
+          g.vy *= 0.5;
+        }
+        g.mesh.rotation.x += dt * 8;
+        g.mesh.rotation.z += dt * 6;
+        if (g.life <= 0) {
+          explodeGrenade(g);
+          grenades.splice(i, 1);
+        }
+      }
+    }
+
+    function spawnTracer(from, to) {
+      // tracers disabled
     }
 
     function spawnSpark(pos, color) {
@@ -1198,7 +1900,9 @@
           blip(520, 0.2, "square", 0.07, 900);
           setObjective("OPEN VAULT DOOR  ·  E");
         } else if (p.kind === "ammo") {
-          player.ammo = MAG_SIZE;
+          player.ammo1 = MAG_PRIMARY;
+          player.ammo2 = MAG_SECONDARY;
+          player.grenades = Math.min(GRENADE_MAX, player.grenades + 1);
           reloadT = 0;
           updateAmmoHud();
           blip(400, 0.1, "triangle", 0.05);
@@ -1267,7 +1971,8 @@
         const dx = player.x - e.mesh.position.x;
         const dz = player.z - e.mesh.position.z;
         const dist = Math.hypot(dx, dz);
-        const seen = dist < 13 && los(e.mesh.position.x, e.mesh.position.z, player.x, player.z);
+        const hearRange = player.silent || player.crouching ? 7.5 : 13;
+        const seen = dist < hearRange && los(e.mesh.position.x, e.mesh.position.z, player.x, player.z);
         if (seen) e.alert = 3.5;
         else e.alert -= dt;
 
@@ -1294,7 +1999,7 @@
         s.mesh.position.y += s.vy * dt;
         s.mesh.position.z += s.vz * dt;
         const hitP = Math.hypot(s.mesh.position.x - player.x, s.mesh.position.z - player.z) < 0.45 &&
-          s.mesh.position.y > player.y + 0.2 && s.mesh.position.y < player.y + PLAYER_H;
+          s.mesh.position.y > player.y + 0.2 && s.mesh.position.y < player.y + bodyH;
         let hitW = false;
         const pb = {
           min: s.mesh.position.clone().addScalar(-0.08),
@@ -1312,15 +2017,27 @@
       for (let i = tracers.length - 1; i >= 0; i--) {
         tracers[i].life -= dt;
         if (tracers[i].life <= 0) {
-          world.remove(tracers[i].mesh);
+          const m = tracers[i].mesh;
+          world.remove(m);
+          if (tracers[i].isGroup) disposeObject3D(m);
+          else {
+            if (m.geometry) m.geometry.dispose();
+            if (m.material) m.material.dispose();
+          }
           tracers.splice(i, 1);
         }
       }
       for (let i = sparks.length - 1; i >= 0; i--) {
         sparks[i].life -= dt;
-        sparks[i].mesh.scale.multiplyScalar(1.08);
+        sparks[i].mesh.scale.multiplyScalar(sparks[i].isGroup ? 1.04 : 1.08);
         if (sparks[i].life <= 0) {
-          world.remove(sparks[i].mesh);
+          const m = sparks[i].mesh;
+          world.remove(m);
+          if (sparks[i].isGroup) disposeObject3D(m);
+          else {
+            if (m.geometry) m.geometry.dispose();
+            if (m.material) m.material.dispose();
+          }
           sparks.splice(i, 1);
         }
       }
@@ -1429,41 +2146,51 @@
 
     function loop() {
       requestAnimationFrame(loop);
-      const dt = Math.min(clock.getDelta(), 0.05);
-      if (muzzle && muzzle.intensity > 0) muzzle.intensity *= 0.72;
-      if (muzzleLight && muzzleLight.intensity > 0) muzzleLight.intensity *= 0.72;
-      shootCd = Math.max(0, shootCd - dt);
-      if (reloadT > 0) {
-        reloadT -= dt;
-        if (reloadT <= 0) finishReload();
-      }
-      if (hurtFlash > 0) {
-        hurtFlash = Math.max(0, hurtFlash - dt * 2.8);
-        hurtEl.style.opacity = String(hurtFlash * 0.85);
-      }
-      if (node && node.alive) {
-        node.mesh.rotation.y += dt * 1.4;
-        node.core.scale.lerp(new THREE.Vector3(1, 1, 1), 0.15);
-        node.core.position.y = Math.sin(performance.now() / 400) * 0.05;
-      }
-      if (laser && laser.live) {
-        matLaser.opacity = 0.28 + Math.sin(performance.now() / 180) * 0.14;
-      }
+      try {
+        const dt = Math.min(clock.getDelta(), 0.05);
+        if (muzzle && muzzle.intensity > 0) muzzle.intensity *= 0.72;
+        if (muzzleLight && muzzleLight.intensity > 0) muzzleLight.intensity *= 0.72;
+        shootCd = Math.max(0, shootCd - dt);
+        if (reloadT > 0) {
+          reloadT -= dt;
+          if (reloadT <= 0) finishReload();
+        }
+        if (hurtFlash > 0) {
+          hurtFlash = Math.max(0, hurtFlash - dt * 2.8);
+          hurtEl.style.opacity = String(hurtFlash * 0.85);
+        }
+        if (node && node.alive) {
+          node.mesh.rotation.y += dt * 1.4;
+          node.core.scale.lerp(new THREE.Vector3(1, 1, 1), 0.15);
+          node.core.position.y = Math.sin(performance.now() / 400) * 0.05;
+        }
+        if (laser && laser.live) {
+          matLaser.opacity = 0.28 + Math.sin(performance.now() / 180) * 0.14;
+        }
 
-      if (state === "play") {
-        tryMove(dt);
-        if (mouseDown && fireMode === "auto") shoot();
-        pickupTick();
-        updateEnemies(dt);
-        updateShots(dt);
-        lookTick();
-        openVaultAnim(dt);
-        syncCamera();
-        drawMinimap();
-      } else {
-        syncCamera();
+        if (state === "play") {
+          tryMove(dt);
+          if (mouseDown && weaponSlot === 1) shoot();
+          pickupTick();
+          updateEnemies(dt);
+          updateShots(dt);
+          updateGrenades(dt);
+          lookTick();
+          openVaultAnim(dt);
+          if (vmRoots[3]) {
+            vmRoots[3].rotation.z *= 0.82;
+            vmRoots[3].rotation.x *= 0.82;
+          }
+          if (gun) gun.rotation.z *= 0.82;
+          syncCamera();
+          drawMinimap();
+        } else {
+          syncCamera();
+        }
+        renderer.render(scene, camera);
+      } catch (err) {
+        console.error("[Q-BREACH] frame error", err);
       }
-      renderer.render(scene, camera);
     }
 
     let dragging = false;
@@ -1495,13 +2222,43 @@
       dragging = false;
     });
 
+    document.addEventListener("wheel", (e) => {
+      if (state !== "play") return;
+      e.preventDefault();
+      if (e.deltaY === 0) return;
+      // CF-style: wheel down -> next weapon, wheel up -> previous
+      const dir = e.deltaY > 0 ? 1 : -1;
+      let next = weaponSlot + dir;
+      if (next > 4) next = 1;
+      if (next < 1) next = 4;
+      switchWeapon(next);
+    }, { passive: false });
+
     document.addEventListener("keydown", (e) => {
       keys[e.code] = true;
-      if (state === "play" && ["KeyW","KeyA","KeyS","KeyD","Space","ShiftLeft","ShiftRight"].includes(e.code)) {
+      if (state === "play" && [
+        "KeyW","KeyA","KeyS","KeyD","Space",
+        "ShiftLeft","ShiftRight","ControlLeft","ControlRight",
+        "Digit1","Digit2","Digit3","Digit4",
+        "Numpad1","Numpad2","Numpad3","Numpad4",
+      ].includes(e.code)) {
         e.preventDefault();
       }
       if (e.code === "KeyE") tryInteract();
-      if (e.code === "KeyV" && state === "play") toggleFireMode();
+      if (e.code === "BracketLeft" && state === "play" && weaponSlot === 1) {
+        e.preventDefault();
+        cycleBlaster(-1);
+      }
+      if (e.code === "BracketRight" && state === "play" && weaponSlot === 1) {
+        e.preventDefault();
+        cycleBlaster(1);
+      }
+      if (state === "play") {
+        if (e.code === "Digit1" || e.code === "Numpad1") switchWeapon(1);
+        if (e.code === "Digit2" || e.code === "Numpad2") switchWeapon(2);
+        if (e.code === "Digit3" || e.code === "Numpad3") switchWeapon(3);
+        if (e.code === "Digit4" || e.code === "Numpad4") switchWeapon(4);
+      }
       if (e.code === "KeyR") {
         if (state === "play") startReload();
         else if (state === "dead" || state === "win" || state === "pause") startPlay();
@@ -1514,14 +2271,14 @@
     document.addEventListener("keyup", (e) => { keys[e.code] = false; });
 
     function resize() {
-      const w = innerWidth;
-      const h = innerHeight;
-      const dpr = Math.min(devicePixelRatio || 1, 1.75);
+      const w = Math.max(1, innerWidth | 0);
+      const h = Math.max(1, innerHeight | 0);
+      const dpr = Math.min(devicePixelRatio || 1, MAX_DPR);
       renderer.setPixelRatio(dpr);
-      renderer.setSize(w, h);
+      renderer.setSize(w, h, false);
       canvas.style.width = "100%";
       canvas.style.height = "100%";
-      camera.aspect = w / Math.max(1, h);
+      camera.aspect = w / h;
       camera.updateProjectionMatrix();
     }
 
@@ -1534,12 +2291,19 @@
       pointerLocked = locked;
     });
 
-    buildGun();
-    buildLevel();
-    resetPlayer();
-    updateHp();
-    resize();
-    loop();
+    try {
+      buildGun();
+      buildLevel();
+      resetPlayer();
+      updateHp();
+      resize();
+      loop();
+    } catch (err) {
+      console.error("[Q-BREACH] init failed", err);
+      if (titleEl) titleEl.textContent = "INIT FAIL";
+      if (descEl) descEl.textContent = String(err && err.message ? err.message : err);
+      if (overlay) overlay.classList.remove("hidden");
+    }
   </script>
 </body>
 </html>
