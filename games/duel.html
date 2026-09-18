@@ -1,0 +1,842 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Q-DUEL · 街头争霸</title>
+  <style>
+    :root {
+      --ink: #090b13;
+      --panel: rgba(10, 13, 25, .9);
+      --cyan: #52efff;
+      --red: #ff465e;
+      --gold: #ffc857;
+      --paper: #f3f6ff;
+      --muted: #8e9aae;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #05060a;
+      color: var(--paper);
+      font-family: "Arial Narrow", Impact, system-ui, sans-serif;
+    }
+    body {
+      display: grid;
+      place-items: center;
+      background:
+        radial-gradient(circle at 50% 0%, #25284b 0, transparent 44%),
+        repeating-linear-gradient(135deg, rgba(255,255,255,.018) 0 1px, transparent 1px 7px),
+        #06070c;
+    }
+    .back {
+      position: fixed;
+      z-index: 20;
+      top: 14px;
+      left: 14px;
+      color: #dfe8ff;
+      text-decoration: none;
+      border: 1px solid rgba(255,255,255,.25);
+      background: rgba(4,5,10,.76);
+      padding: 8px 12px;
+      font: 700 11px/1 system-ui, sans-serif;
+      letter-spacing: .18em;
+    }
+    .back:hover { color: var(--cyan); border-color: var(--cyan); }
+    .shell {
+      position: relative;
+      width: min(96vw, 1280px);
+      max-height: 96vh;
+      aspect-ratio: 16 / 9;
+      border: 1px solid rgba(255,255,255,.24);
+      box-shadow: 0 22px 90px #000, 0 0 55px rgba(82,239,255,.08);
+      background: #111;
+      overflow: hidden;
+    }
+    canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+      image-rendering: pixelated;
+      image-rendering: crisp-edges;
+    }
+    .menu {
+      position: absolute;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      z-index: 10;
+      background:
+        linear-gradient(90deg, rgba(10,12,22,.94), rgba(10,12,22,.68)),
+        radial-gradient(circle at 72% 42%, rgba(255,70,94,.2), transparent 30%);
+      transition: opacity .2s;
+    }
+    .menu.hidden { opacity: 0; pointer-events: none; }
+    .menu-card { width: min(90%, 620px); text-align: center; }
+    .eyebrow {
+      color: var(--gold);
+      font: 800 12px/1 system-ui, sans-serif;
+      letter-spacing: .55em;
+      margin-bottom: 12px;
+    }
+    h1 {
+      font-size: clamp(46px, 8vw, 100px);
+      line-height: .86;
+      font-style: italic;
+      letter-spacing: -.035em;
+      text-transform: uppercase;
+      text-shadow: 5px 5px 0 #1a1d2c, 9px 9px 0 rgba(255,70,94,.7);
+    }
+    h1 span { color: var(--cyan); }
+    .sub {
+      margin: 20px auto 24px;
+      color: #b8c1d4;
+      font: 600 13px/1.8 system-ui, sans-serif;
+      letter-spacing: .06em;
+    }
+    .buttons { display: flex; justify-content: center; gap: 12px; flex-wrap: wrap; }
+    button {
+      min-width: 180px;
+      border: 2px solid #fff;
+      color: #fff;
+      background: transparent;
+      padding: 13px 18px;
+      font: 900 14px/1 system-ui, sans-serif;
+      letter-spacing: .13em;
+      cursor: pointer;
+      transform: skewX(-7deg);
+    }
+    button:hover, button:focus-visible {
+      color: #080a10;
+      background: var(--cyan);
+      border-color: var(--cyan);
+      outline: none;
+    }
+    button.alt:hover { background: var(--red); border-color: var(--red); color: white; }
+    .controls {
+      position: absolute;
+      z-index: 7;
+      bottom: 10px;
+      width: 100%;
+      display: flex;
+      justify-content: space-between;
+      padding: 0 18px;
+      pointer-events: none;
+      font: 700 11px/1.4 system-ui, sans-serif;
+      color: rgba(255,255,255,.68);
+      text-shadow: 0 1px 3px #000;
+    }
+    .controls b { color: white; }
+    @media (max-width: 700px) {
+      .shell { width: 100vw; max-height: 100vh; }
+      .controls { font-size: 8px; bottom: 4px; padding: 0 8px; }
+      .back { top: 6px; left: 6px; padding: 6px 8px; }
+      .sub { font-size: 11px; margin: 14px auto; }
+      button { min-width: 145px; padding: 10px; font-size: 11px; }
+    }
+  </style>
+</head>
+<body>
+  <a class="back" href="../index.html">← HUB</a>
+  <main class="shell">
+    <canvas id="game" width="1280" height="720"></canvas>
+    <div class="menu" id="menu">
+      <div class="menu-card">
+        <div class="eyebrow" id="eyebrow">Q_GAME // FIGHT</div>
+        <h1 id="menuTitle">Q-<span>DUEL</span></h1>
+        <p class="sub" id="menuText">像素格斗 · 单人挑战 · 三局两胜<br>S 主动格挡，连续按两次 W 可二段跳，能量满后释放必杀</p>
+        <div class="buttons">
+          <button id="cpuBtn">开始挑战</button>
+        </div>
+      </div>
+    </div>
+    <div class="controls">
+      <span><b>P1</b> A 左移 · D 右移 · W 二段跳 · S 格挡 · J 轻击 · K 重击 · L 必杀</span>
+      <span>A/D 同时控制角色朝向 · ESC 返回大厅</span>
+    </div>
+  </main>
+
+  <script>
+    "use strict";
+    const canvas = document.getElementById("game");
+    const ctx = canvas.getContext("2d");
+    const W = canvas.width;
+    const H = canvas.height;
+    const FLOOR = 592;
+    const menu = document.getElementById("menu");
+    const menuTitle = document.getElementById("menuTitle");
+    const menuText = document.getElementById("menuText");
+    const eyebrow = document.getElementById("eyebrow");
+    const cpuBtn = document.getElementById("cpuBtn");
+
+    const held = Object.create(null);
+    const pressed = new Set();
+    const particles = [];
+    const projectiles = [];
+    let p1, p2;
+    const mode = "cpu";
+    let gameState = "menu";
+    let timer = 60;
+    let round = 1;
+    let intro = 0;
+    let endDelay = 0;
+    let hitStop = 0;
+    let shake = 0;
+    let flash = 0;
+    let last = performance.now();
+
+    const ATTACKS = {
+      light: { startup: .045, active: .10, recovery: .14, damage: 7, reach: 68, height: 40, y: -94, stun: .22, push: 22, gain: 7 },
+      heavy: { startup: .11, active: .13, recovery: .27, damage: 13, reach: 94, height: 54, y: -84, stun: .38, push: 46, gain: 12 },
+      sweep: { startup: .09, active: .12, recovery: .27, damage: 10, reach: 88, height: 28, y: -32, stun: .32, push: 36, gain: 10 },
+    };
+
+    function fighter(x, side) {
+      return {
+        x, y: FLOOR, vx: 0, vy: 0, side, facing: side === 1 ? 1 : -1,
+        hp: 100, energy: 0, wins: 0, state: "idle", stateT: 0,
+        attack: null, attackHit: false, stun: 0, invuln: 0,
+        crouch: false, blocking: false, jumps: 0, combo: 0, comboT: 0,
+        inputBuffer: null, inputBufferT: 0,
+        aiThink: 0, aiMove: 0, aiBlock: false, aiAction: "", color: side === 1 ? "#31dff3" : "#ff425c",
+      };
+    }
+
+    function resetMatch() {
+      p1 = fighter(360, 1);
+      p2 = fighter(920, 2);
+      p1.wins = 0;
+      p2.wins = 0;
+      round = 1;
+      startRound();
+    }
+
+    function startRound() {
+      const w1 = p1 ? p1.wins : 0;
+      const w2 = p2 ? p2.wins : 0;
+      p1 = fighter(360, 1);
+      p2 = fighter(920, 2);
+      p1.wins = w1;
+      p2.wins = w2;
+      timer = 60;
+      intro = 2.6;
+      endDelay = 0;
+      gameState = "intro";
+      particles.length = 0;
+      projectiles.length = 0;
+    }
+
+    function begin() {
+      menu.classList.add("hidden");
+      resetMatch();
+      last = performance.now();
+    }
+
+    function activeAttack(f) {
+      if (!f.attack) return false;
+      const a = ATTACKS[f.attack];
+      if (!a) return false;
+      return f.stateT >= a.startup && f.stateT < a.startup + a.active;
+    }
+
+    function attack(f, type) {
+      if (gameState !== "fight" || f.stun > 0 || f.attack || f.blocking || f.y < FLOOR - 2) return;
+      f.attack = type;
+      f.attackHit = false;
+      f.state = type;
+      f.stateT = 0;
+      f.vx *= .25;
+    }
+
+    function special(f) {
+      if (gameState !== "fight" || f.energy < 100 || f.stun > 0 || f.attack || f.y < FLOOR - 2) return;
+      f.energy = 0;
+      f.attack = "special";
+      f.attackHit = false;
+      f.state = "special";
+      f.stateT = 0;
+      flash = .18;
+    }
+
+    function burst(x, y, color, count, speed) {
+      for (let i = 0; i < count; i++) {
+        const a = Math.random() * Math.PI * 2;
+        const s = speed * (.35 + Math.random() * .75);
+        particles.push({
+          x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s,
+          life: .25 + Math.random() * .35, max: .6, size: 2 + Math.random() * 7, color,
+        });
+      }
+    }
+
+    function bodyBox(f) {
+      const h = f.crouch ? 105 : 164;
+      return { x: f.x - 35, y: f.y - h, w: 70, h };
+    }
+
+    function overlaps(a, b) {
+      return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+    }
+
+    function resolveAttack(attacker, defender) {
+      if (!activeAttack(attacker) || attacker.attackHit) return;
+      const a = ATTACKS[attacker.attack];
+      const hit = {
+        x: attacker.facing > 0 ? attacker.x + 24 : attacker.x - 24 - a.reach,
+        y: attacker.y + a.y,
+        w: a.reach,
+        h: a.height,
+      };
+      if (!overlaps(hit, bodyBox(defender)) || defender.invuln > 0) return;
+      attacker.attackHit = true;
+      const blocked = defender.blocking && defender.y >= FLOOR - 2;
+      const damage = blocked ? Math.max(1, Math.ceil(a.damage * .18)) : a.damage;
+      defender.hp = Math.max(0, defender.hp - damage);
+      defender.stun = blocked ? .11 : a.stun;
+      defender.state = blocked ? "block" : "hurt";
+      defender.stateT = 0;
+      defender.vx = attacker.facing * a.push * (blocked ? .45 : 1);
+      if (!blocked && attacker.attack === "sweep") defender.vy = -170;
+      attacker.energy = Math.min(100, attacker.energy + a.gain);
+      defender.energy = Math.min(100, defender.energy + (blocked ? 3 : 7));
+      if (!blocked) {
+        attacker.combo = attacker.comboT > 0 ? attacker.combo + 1 : 1;
+        attacker.comboT = .8;
+      }
+      hitStop = blocked ? .035 : attacker.attack === "heavy" ? .095 : .055;
+      shake = blocked ? 3 : attacker.attack === "heavy" ? 10 : 6;
+      burst(defender.x - defender.facing * 24, defender.y + a.y + a.height / 2,
+        blocked ? "#bcecff" : "#ffd05a", blocked ? 7 : 14, blocked ? 150 : 260);
+      if (defender.hp <= 0) finishRound(attacker);
+    }
+
+    function fireProjectile(f) {
+      projectiles.push({
+        x: f.x + f.facing * 62, y: f.y - 78, vx: f.facing * 620,
+        owner: f, life: 1.6, r: 29,
+      });
+      burst(f.x + f.facing * 55, f.y - 76, f.color, 20, 230);
+    }
+
+    function updateProjectile(p, dt, i) {
+      p.x += p.vx * dt;
+      p.life -= dt;
+      const target = p.owner === p1 ? p2 : p1;
+      const box = { x: p.x - p.r, y: p.y - p.r, w: p.r * 2, h: p.r * 2 };
+      if (p.life <= 0 || p.x < -50 || p.x > W + 50) {
+        projectiles.splice(i, 1);
+      } else if (overlaps(box, bodyBox(target)) && target.invuln <= 0) {
+        const blocked = target.blocking && target.y >= FLOOR - 2;
+        target.hp = Math.max(0, target.hp - (blocked ? 4 : 20));
+        target.stun = blocked ? .18 : .48;
+        target.state = blocked ? "block" : "hurt";
+        target.stateT = 0;
+        target.vx = p.owner.facing * (blocked ? 75 : 180);
+        target.energy = Math.min(100, target.energy + 12);
+        p.owner.combo = p.owner.comboT > 0 ? p.owner.combo + 1 : 1;
+        p.owner.comboT = .9;
+        burst(p.x, p.y, blocked ? "#d8f8ff" : "#fff28b", 34, 360);
+        shake = 16;
+        hitStop = .13;
+        flash = .08;
+        projectiles.splice(i, 1);
+        if (target.hp <= 0) finishRound(p.owner);
+      }
+    }
+
+    function finishRound(winner) {
+      if (gameState !== "fight") return;
+      winner.wins++;
+      const loser = winner === p1 ? p2 : p1;
+      winner.attack = null;
+      winner.state = "idle";
+      loser.attack = null;
+      loser.stun = 0;
+      loser.state = "death";
+      loser.stateT = 0;
+      gameState = "roundOver";
+      endDelay = 2.8;
+      shake = 18;
+    }
+
+    function timeOut() {
+      if (p1.hp === p2.hp) {
+        p1.hp = p2.hp = 0;
+        p1.state = p2.state = "death";
+        p1.stateT = p2.stateT = 0;
+        gameState = "roundOver";
+        endDelay = 2.8;
+      } else {
+        finishRound(p1.hp > p2.hp ? p1 : p2);
+      }
+    }
+
+    function finishMatch() {
+      gameState = "matchOver";
+      const winner = p1.wins > p2.wins ? (mode === "cpu" ? "PLAYER 1 WINS" : "PLAYER 1 WINS") :
+        (mode === "cpu" ? "CPU WINS" : "PLAYER 2 WINS");
+      eyebrow.textContent = "MATCH COMPLETE";
+      menuTitle.innerHTML = winner.replace(" WINS", "<span> WINS</span>");
+      menuText.innerHTML = `比分 ${p1.wins} : ${p2.wins}<br>点击下方按钮开始下一场挑战`;
+      cpuBtn.textContent = "再次挑战";
+      menu.classList.remove("hidden");
+    }
+
+    function inputFor(f, dt) {
+      const isP1 = f === p1;
+      let left, right, down, jump, light, heavy, power;
+      if (isP1) {
+        left = held.KeyA; right = held.KeyD; down = held.KeyS;
+        jump = pressed.has("KeyW"); light = pressed.has("KeyJ");
+        heavy = pressed.has("KeyK"); power = pressed.has("KeyL");
+      } else {
+        const ai = aiInput(f, dt);
+        left = ai.left; right = ai.right; down = ai.down;
+        jump = ai.jump; light = ai.light; heavy = ai.heavy; power = ai.power;
+      }
+
+      if (f.stun > 0) {
+        f.blocking = false;
+        f.crouch = false;
+        return;
+      }
+      f.blocking = !!down && !f.attack && f.y >= FLOOR - 2;
+      f.crouch = false;
+      let requested = power ? "special" : heavy ? "heavy" : light ? (down ? "sweep" : "light") : null;
+      if (f.attack) {
+        if (requested) {
+          f.inputBuffer = requested;
+          f.inputBufferT = .16;
+        }
+        return;
+      }
+      if (!requested && f.inputBufferT > 0) requested = f.inputBuffer;
+      if (requested) {
+        f.inputBuffer = null;
+        f.inputBufferT = 0;
+      }
+
+      let axis = (right ? 1 : 0) - (left ? 1 : 0);
+      if (isP1 && axis) f.facing = axis > 0 ? 1 : -1;
+      if (!isP1 && Math.abs(p1.x - f.x) > 4) f.facing = p1.x > f.x ? 1 : -1;
+      if (f.blocking) axis = 0;
+      const speed = f.blocking ? 120 : 270;
+      f.vx = axis * speed;
+      if (jump && f.jumps < 2 && !f.blocking) {
+        f.vy = f.jumps === 0 ? -700 : -640;
+        f.jumps++;
+        f.state = "jump";
+      }
+      if (requested === "light" || requested === "heavy" || requested === "sweep") attack(f, requested);
+      if (requested === "special") special(f);
+      if (!axis && f.y >= FLOOR - 2 && !f.attack) f.state = f.crouch ? "crouch" : "idle";
+      else if (axis && f.y >= FLOOR - 2 && !f.attack) f.state = f.blocking ? "block" : "walk";
+      if (f.blocking) f.state = "block";
+    }
+
+    function aiInput(f, dt) {
+      const o = p1;
+      const dist = Math.abs(o.x - f.x);
+      f.aiThink -= dt;
+      if (f.aiThink <= 0) {
+        f.aiThink = .08 + Math.random() * .13;
+        f.aiMove = 0;
+        f.aiBlock = false;
+        f.aiAction = "";
+        if (o.attack && activeAttack(o) && dist < 135 && Math.random() < .72) {
+          f.aiBlock = true;
+        } else if (dist > 150) {
+          f.aiMove = o.x < f.x ? -1 : 1;
+          if (f.energy >= 100 && dist > 300 && Math.random() < .45) f.aiAction = "power";
+        } else if (dist < 82) {
+          f.aiMove = o.x < f.x ? 1 : -1;
+          if (Math.random() < .72) f.aiAction = Math.random() < .54 ? "light" : "heavy";
+        } else if (Math.random() < .62) {
+          f.aiMove = o.x < f.x ? -1 : 1;
+          f.aiAction = Math.random() < .55 ? "light" : "heavy";
+        }
+        if (Math.random() < .035 && dist > 190) f.aiAction = "jump";
+      }
+      const towardLeft = f.aiMove < 0;
+      return {
+        left: towardLeft, right: f.aiMove > 0, down: f.aiBlock,
+        jump: f.aiAction === "jump", light: f.aiAction === "light",
+        heavy: f.aiAction === "heavy", power: f.aiAction === "power",
+      };
+    }
+
+    function updateFighter(f, dt) {
+      f.stateT += dt;
+      if (f.inputBufferT > 0) {
+        f.inputBufferT -= dt;
+        if (f.inputBufferT <= 0) f.inputBuffer = null;
+      }
+      if (f.stun > 0) {
+        f.stun -= dt;
+        if (f.stun <= 0) f.state = "idle";
+      }
+      if (f.invuln > 0) f.invuln -= dt;
+      if (f.comboT > 0) {
+        f.comboT -= dt;
+        if (f.comboT <= 0) f.combo = 0;
+      }
+      if (f.attack) {
+        if (f.attack === "special") {
+          if (!f.attackHit && f.stateT >= .22) {
+            f.attackHit = true;
+            fireProjectile(f);
+          }
+          if (f.stateT >= .56) {
+            f.attack = null;
+            f.state = "idle";
+          }
+        } else {
+          const a = ATTACKS[f.attack];
+          if (f.stateT >= a.startup + a.active + a.recovery) {
+            f.attack = null;
+            f.state = "idle";
+          }
+        }
+      }
+      f.vy += 1850 * dt;
+      f.x += f.vx * dt;
+      f.y += f.vy * dt;
+      if (!f.attack && f.stun <= 0) f.vx *= Math.pow(.001, dt);
+      else f.vx *= Math.pow(.06, dt);
+      if (f.y >= FLOOR) {
+        f.y = FLOOR;
+        f.vy = 0;
+        f.jumps = 0;
+        if (f.state === "jump") f.state = "idle";
+      }
+      f.x = Math.max(72, Math.min(W - 72, f.x));
+    }
+
+    function separate() {
+      const b1 = bodyBox(p1);
+      const b2 = bodyBox(p2);
+      const verticallyOverlapping = b1.y < b2.y + b2.h && b1.y + b1.h > b2.y;
+      if (!verticallyOverlapping) return;
+      const dx = p2.x - p1.x;
+      const min = 76;
+      if (Math.abs(dx) < min) {
+        const push = (min - Math.abs(dx)) / 2;
+        const dir = dx >= 0 ? 1 : -1;
+        p1.x -= push * dir;
+        p2.x += push * dir;
+      }
+    }
+
+    function update(dt) {
+      if (flash > 0) flash -= dt;
+      if (shake > 0) shake *= Math.pow(.015, dt);
+      for (let i = particles.length - 1; i >= 0; i--) {
+        const p = particles[i];
+        p.x += p.vx * dt;
+        p.y += p.vy * dt;
+        p.vy += 500 * dt;
+        p.life -= dt;
+        if (p.life <= 0) particles.splice(i, 1);
+      }
+      if (gameState === "intro") {
+        intro -= dt;
+        if (intro <= 0) gameState = "fight";
+      } else if (gameState === "fight") {
+        timer -= dt;
+        if (timer <= 0) { timer = 0; timeOut(); }
+        inputFor(p1, dt);
+        inputFor(p2, dt);
+        updateFighter(p1, dt);
+        updateFighter(p2, dt);
+        separate();
+        resolveAttack(p1, p2);
+        if (gameState === "fight") resolveAttack(p2, p1);
+        for (let i = projectiles.length - 1; i >= 0; i--) updateProjectile(projectiles[i], dt, i);
+      } else if (gameState === "roundOver") {
+        updateFighter(p1, dt);
+        updateFighter(p2, dt);
+        endDelay -= dt;
+        if (endDelay <= 0) {
+          if (p1.wins >= 2 || p2.wins >= 2) finishMatch();
+          else { round++; startRound(); }
+        }
+      }
+      pressed.clear();
+    }
+
+    const spriteSets = {
+      1: makeSpriteSet("../assets/duel/hero/", {
+        idle: ["Idle.png", 8, 9], run: ["Run.png", 8, 13],
+        jump: ["Jump.png", 2, 7], fall: ["Fall.png", 2, 7],
+        attack1: ["Attack1.png", 6, 14], attack2: ["Attack2.png", 6, 14],
+        hit: ["TakeHit.png", 4, 12], death: ["Death.png", 6, 8],
+      }),
+      2: makeSpriteSet("../assets/duel/rival/", {
+        idle: ["Idle.png", 4, 7], run: ["Run.png", 8, 13],
+        jump: ["Jump.png", 2, 7], fall: ["Fall.png", 2, 7],
+        attack1: ["Attack1.png", 4, 12], attack2: ["Attack2.png", 4, 11],
+        hit: ["TakeHit.png", 3, 11], death: ["Death.png", 7, 8],
+      }),
+    };
+
+    function makeSpriteSet(base, definitions) {
+      const set = {};
+      for (const [name, data] of Object.entries(definitions)) {
+        const image = new Image();
+        image.src = base + data[0];
+        set[name] = { image, frames: data[1], fps: data[2] };
+      }
+      return set;
+    }
+
+    function currentSprite(f) {
+      let name = "idle";
+      if (f.state === "death") name = "death";
+      else if (f.state === "hurt") name = "hit";
+      else if (f.state === "light" || f.state === "sweep") name = "attack1";
+      else if (f.state === "heavy" || f.state === "special") name = "attack2";
+      else if (f.y < FLOOR - 2) name = f.vy < 0 ? "jump" : "fall";
+      else if (f.state === "walk") name = "run";
+      return { name, sprite: spriteSets[f.side][name] };
+    }
+
+    function drawFighter(f) {
+      const selected = currentSprite(f);
+      const s = selected.sprite;
+      const once = ["attack1", "attack2", "hit", "death"].includes(selected.name);
+      const elapsed = once ? f.stateT : performance.now() / 1000;
+      let frame;
+      if (f.attack && (selected.name === "attack1" || selected.name === "attack2")) {
+        const a = ATTACKS[f.attack];
+        const duration = f.attack === "special" ? .56 : a.startup + a.active + a.recovery;
+        frame = Math.min(s.frames - 1, Math.floor((f.stateT / duration) * s.frames));
+      } else {
+        frame = once
+          ? Math.min(s.frames - 1, Math.floor(elapsed * s.fps))
+          : Math.floor(elapsed * s.fps) % s.frames;
+      }
+      const crouchOffset = f.crouch && selected.name === "idle" ? 25 : 0;
+
+      ctx.save();
+      ctx.translate(f.x, f.y + crouchOffset);
+      ctx.fillStyle = "rgba(0,0,0,.38)";
+      ctx.beginPath();
+      ctx.ellipse(0, 5, 60, 13, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      if (s.image.complete && s.image.naturalWidth) {
+        const baseDirection = f.side === 1 ? 1 : -1;
+        const anchorX = f.side === 1 ? -282 : -306;
+        const anchorY = f.side === 1 ? -363 : -381;
+        ctx.scale(f.facing * baseDirection, 1);
+        ctx.imageSmoothingEnabled = false;
+        ctx.drawImage(s.image, frame * 200, 0, 200, 200, anchorX, anchorY, 600, 600);
+      } else {
+        ctx.fillStyle = f.color;
+        ctx.fillRect(-32, -145, 64, 145);
+      }
+      ctx.restore();
+
+      if (f.blocking) {
+        const pulse = .72 + Math.sin(performance.now() / 70) * .18;
+        ctx.save();
+        ctx.translate(f.x + f.facing * 42, f.y - 83);
+        ctx.scale(f.facing, 1);
+        ctx.globalAlpha = pulse;
+        ctx.fillStyle = "rgba(105,232,255,.13)";
+        ctx.strokeStyle = "#9af4ff";
+        ctx.lineWidth = 6;
+        ctx.beginPath();
+        ctx.arc(0, 0, 55, -1.15, 1.15);
+        ctx.lineTo(-8, 0);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+        ctx.strokeStyle = "rgba(255,255,255,.82)";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(0, 0, 43, -.9, .9);
+        ctx.stroke();
+        ctx.restore();
+      }
+    }
+
+    function drawStage() {
+      const sky = ctx.createLinearGradient(0, 0, 0, H);
+      sky.addColorStop(0, "#11142c");
+      sky.addColorStop(.54, "#be3e58");
+      sky.addColorStop(1, "#ff9b5d");
+      ctx.fillStyle = sky; ctx.fillRect(0, 0, W, H);
+      ctx.fillStyle = "rgba(255,231,169,.65)";
+      ctx.beginPath(); ctx.arc(930, 152, 77, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = "rgba(17,20,44,.72)";
+      for (let i = 0; i < 18; i++) {
+        const x = i * 78 - 30;
+        const h = 75 + ((i * 53) % 140);
+        ctx.fillRect(x, FLOOR - 90 - h, 62, h);
+        ctx.fillStyle = "rgba(255,210,110,.28)";
+        for (let y = FLOOR - 110 - h; y < FLOOR - 110; y += 24)
+          for (let wx = x + 10; wx < x + 55; wx += 18) ctx.fillRect(wx, y, 7, 10);
+        ctx.fillStyle = "rgba(17,20,44,.72)";
+      }
+      ctx.fillStyle = "#23263a"; ctx.fillRect(0, FLOOR - 90, W, 90);
+      ctx.strokeStyle = "#555b71"; ctx.lineWidth = 5;
+      ctx.beginPath(); ctx.moveTo(0, FLOOR - 88); ctx.lineTo(W, FLOOR - 88); ctx.stroke();
+      ctx.fillStyle = "#171923"; ctx.fillRect(0, FLOOR, W, H - FLOOR);
+      ctx.strokeStyle = "rgba(255,255,255,.12)"; ctx.lineWidth = 2;
+      for (let x = -200; x < W + 200; x += 150) {
+        ctx.beginPath(); ctx.moveTo(W / 2, FLOOR); ctx.lineTo(x, H); ctx.stroke();
+      }
+      for (let y = FLOOR + 28; y < H; y += 34) {
+        ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+      }
+      ctx.fillStyle = "rgba(255,255,255,.05)";
+      ctx.font = "900 88px Arial"; ctx.textAlign = "center";
+      ctx.fillText("Q-CITY", W / 2, FLOOR - 8);
+    }
+
+    function meter(x, y, w, value, color, flip) {
+      ctx.fillStyle = "rgba(3,4,9,.82)";
+      ctx.fillRect(x, y, w, 31);
+      const inner = (w - 8) * Math.max(0, value / 100);
+      ctx.fillStyle = color;
+      ctx.fillRect(flip ? x + w - 4 - inner : x + 4, y + 4, inner, 23);
+      ctx.strokeStyle = "#f5f7ff"; ctx.lineWidth = 3;
+      ctx.strokeRect(x, y, w, 31);
+    }
+
+    function drawHud() {
+      ctx.save();
+      meter(65, 47, 480, p1.hp, "#24d9ec", true);
+      meter(W - 545, 47, 480, p2.hp, "#f13c59", false);
+      ctx.fillStyle = "#fff";
+      ctx.font = "900 23px Arial"; ctx.textAlign = "left"; ctx.fillText("PLAYER 1", 66, 38);
+      ctx.textAlign = "right"; ctx.fillText(mode === "cpu" ? "CPU / RAZE" : "PLAYER 2", W - 66, 38);
+      ctx.fillStyle = "#090b13"; ctx.beginPath(); ctx.arc(W / 2, 63, 42, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = "#fff"; ctx.lineWidth = 4; ctx.stroke();
+      ctx.fillStyle = "#fff"; ctx.font = "900 34px Arial"; ctx.textAlign = "center";
+      ctx.fillText(String(Math.ceil(timer)).padStart(2, "0"), W / 2, 75);
+
+      meter(66, 88, 245, p1.energy, p1.energy >= 100 ? "#fff36b" : "#397ca8", false);
+      meter(W - 311, 88, 245, p2.energy, p2.energy >= 100 ? "#fff36b" : "#a83250", true);
+      ctx.fillStyle = "#fff"; ctx.font = "800 11px Arial";
+      ctx.textAlign = "left"; ctx.fillText(p1.energy >= 100 ? "SUPER READY" : "POWER", 71, 110);
+      ctx.textAlign = "right"; ctx.fillText(p2.energy >= 100 ? "SUPER READY" : "POWER", W - 71, 110);
+
+      for (let i = 0; i < 2; i++) {
+        ctx.fillStyle = i < p1.wins ? "#ffc857" : "rgba(255,255,255,.2)";
+        ctx.beginPath(); ctx.arc(331 + i * 23, 104, 7, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = i < p2.wins ? "#ffc857" : "rgba(255,255,255,.2)";
+        ctx.beginPath(); ctx.arc(W - 331 - i * 23, 104, 7, 0, Math.PI * 2); ctx.fill();
+      }
+      if (p1.combo >= 2 && p1.comboT > 0) drawCombo(116, 208, p1.combo, "#52efff", false);
+      if (p2.combo >= 2 && p2.comboT > 0) drawCombo(W - 116, 208, p2.combo, "#ff526b", true);
+      ctx.restore();
+    }
+
+    function drawCombo(x, y, combo, color, right) {
+      ctx.textAlign = right ? "right" : "left";
+      ctx.fillStyle = color;
+      ctx.font = "italic 900 49px Arial";
+      ctx.fillText(combo + " HIT", x, y);
+      ctx.fillStyle = "#fff"; ctx.font = "800 13px Arial";
+      ctx.fillText("COMBO", x, y + 22);
+    }
+
+    function centerText(top, main, sub) {
+      ctx.save();
+      ctx.textAlign = "center";
+      ctx.font = "italic 900 76px Arial";
+      ctx.lineWidth = 12;
+      ctx.strokeStyle = "rgba(8,10,17,.82)";
+      ctx.strokeText(main, W / 2, top);
+      ctx.fillStyle = main === "FIGHT!" ? "#ffc857" : "#fff";
+      ctx.fillText(main, W / 2, top);
+      if (sub) {
+        ctx.font = "900 17px Arial"; ctx.fillStyle = "#fff";
+        ctx.fillText(sub, W / 2, top + 31);
+      }
+      ctx.restore();
+    }
+
+    function drawProjectile(p) {
+      ctx.save();
+      const g = ctx.createRadialGradient(p.x, p.y, 2, p.x, p.y, p.r * 1.7);
+      g.addColorStop(0, "#fff");
+      g.addColorStop(.22, p.owner.color);
+      g.addColorStop(1, "rgba(82,239,255,0)");
+      ctx.fillStyle = g;
+      ctx.beginPath(); ctx.arc(p.x, p.y, p.r * 1.7, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = "#fff"; ctx.lineWidth = 3;
+      for (let i = 0; i < 3; i++) {
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.r * (.5 + i * .25), performance.now() / 130 + i, performance.now() / 130 + i + 2);
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+
+    function draw() {
+      ctx.save();
+      if (shake > .5) ctx.translate((Math.random() - .5) * shake, (Math.random() - .5) * shake);
+      drawStage();
+      if (p1 && p2) {
+        drawFighter(p1);
+        drawFighter(p2);
+        for (const p of projectiles) drawProjectile(p);
+        for (const p of particles) {
+          ctx.globalAlpha = Math.max(0, p.life / p.max);
+          ctx.fillStyle = p.color;
+          ctx.fillRect(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size);
+        }
+        ctx.globalAlpha = 1;
+        drawHud();
+        if (gameState === "intro") {
+          const main = intro > 1.05 ? `ROUND ${round}` : "FIGHT!";
+          centerText(330, main, intro > 1.05 ? "FIRST TO TWO" : "");
+        } else if (gameState === "roundOver") {
+          centerText(330, p1.hp <= 0 && p2.hp <= 0 ? "DRAW" : "K.O.",
+            p1.hp > p2.hp ? "PLAYER 1 TAKES THE ROUND" :
+            p2.hp > p1.hp ? (mode === "cpu" ? "CPU TAKES THE ROUND" : "PLAYER 2 TAKES THE ROUND") : "");
+        }
+      }
+      if (flash > 0) {
+        ctx.fillStyle = `rgba(255,255,255,${Math.min(.7, flash * 4)})`;
+        ctx.fillRect(0, 0, W, H);
+      }
+      ctx.restore();
+    }
+
+    function loop(now) {
+      let dt = Math.min(.033, (now - last) / 1000);
+      last = now;
+      if (hitStop > 0) {
+        hitStop -= dt;
+        dt = 0;
+      }
+      if (gameState !== "menu" && gameState !== "matchOver") update(dt);
+      draw();
+      requestAnimationFrame(loop);
+    }
+
+    document.addEventListener("keydown", (e) => {
+      const prevent = ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Numpad1", "Numpad2", "Numpad3", "Space"];
+      if (prevent.includes(e.code)) e.preventDefault();
+      if (!held[e.code]) pressed.add(e.code);
+      held[e.code] = true;
+      if (e.code === "Escape") location.href = "../index.html";
+    });
+    document.addEventListener("keyup", (e) => { held[e.code] = false; });
+    window.addEventListener("blur", () => {
+      for (const k of Object.keys(held)) held[k] = false;
+      pressed.clear();
+    });
+    cpuBtn.addEventListener("click", begin);
+
+    drawStage();
+    requestAnimationFrame(loop);
+  </script>
+</body>
+</html>
