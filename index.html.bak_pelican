@@ -299,14 +299,6 @@
       },
       {
         id: "05",
-        name: "Q-RIDE",
-        accent: "RIDE",
-        tagline: "鹈鹕骑行 · 海岸公路 · 昼夜循环 · 收集小鱼",
-        href: "games/pelican_bike.html",
-        status: "live",
-      },
-      {
-        id: "06",
         name: "COMING SOON",
         accent: "",
         tagline: "下一个小游戏位",
